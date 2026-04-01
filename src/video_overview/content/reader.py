@@ -123,20 +123,22 @@ def _is_binary(content_bytes: bytes) -> bool:
 def _matches_any(rel_path: str, patterns: list[str]) -> bool:
     """Check if a POSIX relative path matches any of the given patterns.
 
-    For patterns containing a ``/`` (path-based), uses
-    ``PurePosixPath.match()`` which is path-segment aware.  For
-    basename-only patterns (e.g. ``*.py``), uses ``fnmatch`` against
-    the filename component.
+    For patterns containing a ``/`` (path-based), the pattern is
+    anchored to the source-dir root via ``pathspec`` gitignore
+    matching.  For basename-only patterns (e.g. ``*.py``), uses
+    ``fnmatch`` against the filename component.
     """
-    posix = PurePosixPath(rel_path)
+    basename = PurePosixPath(rel_path).name
     for pat in patterns:
         if "/" in pat:
-            # Path-based pattern — segment-aware matching
-            if posix.match(pat):
+            # Path-based pattern — use pathspec for root-anchored,
+            # segment-aware matching (supports * and ** correctly).
+            spec = pathspec.PathSpec.from_lines("gitignore", [pat])
+            if spec.match_file(rel_path):
                 return True
         else:
             # Basename-only pattern
-            if fnmatch.fnmatch(posix.name, pat):
+            if fnmatch.fnmatch(basename, pat):
                 return True
     return False
 

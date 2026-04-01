@@ -116,6 +116,20 @@ class TestIncludeFilter:
         paths = [f["path"] for f in result["files"]]
         assert "src/sub/helper.py" in paths
 
+    def test_include_pattern_anchored_to_root(self, reader, tmp_path):
+        """'src/*.py' should NOT match 'foo/src/main.py'."""
+        nested = tmp_path / "foo" / "src"
+        nested.mkdir(parents=True)
+        (nested / "main.py").write_text("x = 1")
+        top = tmp_path / "src"
+        top.mkdir()
+        (top / "main.py").write_text("y = 2")
+
+        result = reader.read(tmp_path, include=["src/*.py"])
+        paths = [f["path"] for f in result["files"]]
+        assert "src/main.py" in paths
+        assert "foo/src/main.py" not in paths
+
 
 class TestExcludeFilter:
     """Test exclude pattern filtering."""
