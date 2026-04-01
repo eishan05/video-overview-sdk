@@ -6,7 +6,16 @@ import os
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 
 
 class ScriptSegment(BaseModel):
@@ -28,24 +37,26 @@ class OverviewResult(BaseModel):
     """Result metadata from generating a video/audio overview."""
 
     output_path: Path
-    duration_seconds: float
-    segments_count: int
+    duration_seconds: NonNegativeFloat
+    segments_count: NonNegativeInt
 
 
 class OverviewConfig(BaseModel):
     """Main configuration for generating a video overview."""
 
+    model_config = ConfigDict(extra="forbid")
+
     source_dir: Path
     output: Path
     topic: str
-    include: list[str] = ["*"]
-    exclude: list[str] = []
+    include: list[str] = Field(default=["*"])
+    exclude: list[str] = Field(default=[])
     mode: Literal["conversation", "narration"] = "conversation"
     format: Literal["video", "audio"] = "video"
     host_voice: str = "Aoede"
     expert_voice: str = "Charon"
     narrator_voice: str = "Kore"
-    max_duration_minutes: int = 10
+    max_duration_minutes: PositiveInt = 10
     llm_backend: Literal["claude", "codex"] = "claude"
     cache_dir: Optional[Path] = None
 
@@ -67,6 +78,21 @@ class OverviewConfig(BaseModel):
             raise ValueError(
                 f"output parent directory does not exist: {v.parent}"
             )
+        if v.exists() and v.is_dir():
+            raise ValueError(
+                f"output must be a file path, not an existing directory: {v}"
+            )
+        return v
+
+    @field_validator("cache_dir")
+    @classmethod
+    def _validate_cache_dir(cls, v: Path | None) -> Path | None:
+        if v is not None:
+            v = Path(v)
+            if v.exists() and not v.is_dir():
+                raise ValueError(
+                    f"cache_dir exists but is not a directory: {v}"
+                )
         return v
 
     @model_validator(mode="after")

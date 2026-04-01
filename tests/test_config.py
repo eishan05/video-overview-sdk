@@ -82,6 +82,25 @@ class TestOverviewResult:
         with pytest.raises(ValidationError):
             OverviewResult(output_path="/tmp/x.mp4", duration_seconds=1.0)
 
+    def test_negative_duration_rejected(self):
+        with pytest.raises(ValidationError):
+            OverviewResult(
+                output_path="/tmp/x.mp4", duration_seconds=-1.0, segments_count=1
+            )
+
+    def test_negative_segments_count_rejected(self):
+        with pytest.raises(ValidationError):
+            OverviewResult(
+                output_path="/tmp/x.mp4", duration_seconds=1.0, segments_count=-1
+            )
+
+    def test_zero_values_accepted(self):
+        result = OverviewResult(
+            output_path="/tmp/x.mp4", duration_seconds=0.0, segments_count=0
+        )
+        assert result.duration_seconds == 0.0
+        assert result.segments_count == 0
+
 
 # ---------------------------------------------------------------------------
 # OverviewConfig – defaults
@@ -224,6 +243,18 @@ class TestOverviewConfigOutputValidation:
                 topic="Test",
             )
 
+    def test_output_rejects_existing_directory(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        out_dir = tmp_path / "out_dir"
+        out_dir.mkdir()
+        with pytest.raises(ValidationError, match="output"):
+            OverviewConfig(
+                source_dir=source,
+                output=out_dir,
+                topic="Test",
+            )
+
 
 # ---------------------------------------------------------------------------
 # OverviewConfig – Literal validation
@@ -263,6 +294,39 @@ class TestOverviewConfigLiteralValidation:
                 output=tmp_path / "out.mp4",
                 topic="Test",
                 llm_backend="gpt",  # invalid
+            )
+
+    def test_negative_max_duration_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                max_duration_minutes=-5,
+            )
+
+    def test_zero_max_duration_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                max_duration_minutes=0,
+            )
+
+    def test_extra_fields_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                narrtor_voice="Typo",  # misspelled field
             )
 
 
@@ -348,6 +412,34 @@ class TestOverviewConfigCacheDir:
             topic="Test",
         )
         assert cfg.cache_dir == source / ".video_overview_cache"
+
+    def test_cache_dir_rejects_existing_file(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cache_file = tmp_path / "not_a_dir"
+        cache_file.write_text("I am a file")
+
+        with pytest.raises(ValidationError, match="cache_dir"):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                cache_dir=cache_file,
+            )
+
+    def test_cache_dir_accepts_existing_directory(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cache_dir = tmp_path / "existing_cache"
+        cache_dir.mkdir()
+
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            cache_dir=cache_dir,
+        )
+        assert cfg.cache_dir == cache_dir
 
 
 # ---------------------------------------------------------------------------
