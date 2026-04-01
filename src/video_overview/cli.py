@@ -3,12 +3,44 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 
 from video_overview import __version__
+from video_overview.audio.generator import AudioGenerationError
 from video_overview.config import OverviewConfig
 from video_overview.core import create_overview
+from video_overview.script.generator import ScriptGenerationError
+from video_overview.video.assembler import VideoAssemblyError
+from video_overview.visuals.generator import VisualGenerationError
+
+#: Exception types that represent user-facing operational errors.
+_HANDLED_ERRORS = (
+    ValueError,
+    RuntimeError,
+    OSError,
+    AudioGenerationError,
+    ScriptGenerationError,
+    VideoAssemblyError,
+    VisualGenerationError,
+)
+
+
+def _validate_output_parent(
+    ctx: click.Context,
+    param: click.Parameter,
+    value: str,
+) -> str:
+    """Ensure the parent directory of ``--output`` exists."""
+    parent = Path(value).parent
+    if not parent.exists():
+        raise click.BadParameter(
+            f"output parent directory does not exist: {parent}",
+            ctx=ctx,
+            param=param,
+        )
+    return value
 
 
 @click.command()
@@ -27,6 +59,7 @@ from video_overview.core import create_overview
     "--output",
     "-o",
     required=True,
+    callback=_validate_output_parent,
     help="Output file path for the generated overview.",
 )
 @click.option(
@@ -132,7 +165,7 @@ def main(
     except KeyboardInterrupt:
         click.echo("Interrupted")
         sys.exit(130)
-    except (ValueError, RuntimeError, OSError) as exc:
+    except _HANDLED_ERRORS as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 

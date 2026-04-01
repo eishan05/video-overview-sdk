@@ -5,8 +5,12 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from video_overview.audio.generator import AudioGenerationError
 from video_overview.cli import main
 from video_overview.config import OverviewResult
+from video_overview.script.generator import ScriptGenerationError
+from video_overview.video.assembler import VideoAssemblyError
+from video_overview.visuals.generator import VisualGenerationError
 
 
 @pytest.fixture
@@ -263,6 +267,23 @@ class TestInputValidation:
         )
         assert result.exit_code != 0
 
+    def test_nonexistent_output_parent_fails(
+        self, runner, source_dir, tmp_path
+    ):
+        bad_output = str(
+            tmp_path / "missing_dir" / "output.mp4"
+        )
+        result = runner.invoke(
+            main,
+            [
+                str(source_dir),
+                "--topic", "test",
+                "--output", bad_output,
+            ],
+        )
+        assert result.exit_code != 0
+        assert "does not exist" in result.output.lower()
+
 
 class TestMultiplePatterns:
     """Test multiple --include and --exclude patterns."""
@@ -410,6 +431,78 @@ class TestErrorHandling:
             )
         assert result.exit_code == 1
         assert "Permission denied" in result.output
+
+    def test_audio_generation_error_displays_message(
+        self, runner, source_dir, output_file
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=AudioGenerationError("audio failed"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "audio failed" in result.output
+
+    def test_script_generation_error_displays_message(
+        self, runner, source_dir, output_file
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=ScriptGenerationError("script err"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "script err" in result.output
+
+    def test_video_assembly_error_displays_message(
+        self, runner, source_dir, output_file
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=VideoAssemblyError("assembly err"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "assembly err" in result.output
+
+    def test_visual_generation_error_displays_message(
+        self, runner, source_dir, output_file
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=VisualGenerationError("visual err"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "visual err" in result.output
 
     def test_unexpected_error_propagates(
         self, runner, source_dir, output_file
