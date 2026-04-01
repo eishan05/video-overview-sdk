@@ -15,12 +15,14 @@ from google.genai import types
 from video_overview.config import Script
 
 _MODEL = "gemini-2.5-flash-preview-tts"
-_BATCH_SIZE = 13  # Target ~10-15 segments per batch
+_BATCH_SIZE = 13  # Target ~10-15 segments per batch; TODO: also budget by token count
 _MAX_RETRIES = 3
 _BASE_DELAY = 1  # seconds
 # Average speaking rate: ~150 words per minute => ~2.5 words/sec
 # Average word length ~5 chars => ~12.5 chars/sec
 _CHARS_PER_SECOND = 12.5
+_CONVERSATION_SPEAKERS = {"Host", "Expert"}
+_NARRATION_SPEAKERS = {"Narrator"}
 
 
 class AudioGenerationError(Exception):
@@ -70,18 +72,43 @@ class AudioGenerator:
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
+        if not script.segments:
+            raise AudioGenerationError(
+                "Script must contain at least one segment."
+            )
+
         client = genai.Client(api_key=self._api_key)
 
-        # Determine mode from unique speakers
+        # Determine mode from speaker names (not count).
+        # Conversation uses Host/Expert; narration uses Narrator.
         unique_speakers = {seg.speaker for seg in script.segments}
-        is_multi_speaker = len(unique_speakers) > 1
+        is_conversation = bool(
+            unique_speakers & _CONVERSATION_SPEAKERS
+        )
+        is_narration = bool(unique_speakers & _NARRATION_SPEAKERS)
 
-        # Build voice config
-        voice_map = {"Host": host_voice, "Expert": expert_voice}
-        # For narration, use the first speaker name (typically "Narrator")
-        if not is_multi_speaker:
-            single_speaker = next(iter(unique_speakers))
-            voice_map[single_speaker] = narrator_voice
+        if is_conversation and is_narration:
+            raise AudioGenerationError(
+                f"Script mixes conversation speakers "
+                f"({_CONVERSATION_SPEAKERS}) with narration speakers "
+                f"({_NARRATION_SPEAKERS}). Use one mode only."
+            )
+
+        unknown = unique_speakers - _CONVERSATION_SPEAKERS - _NARRATION_SPEAKERS
+        if unknown:
+            raise AudioGenerationError(
+                f"Unknown speaker(s): {unknown}. "
+                f"Allowed: {_CONVERSATION_SPEAKERS | _NARRATION_SPEAKERS}"
+            )
+
+        is_multi_speaker = is_conversation
+
+        # Build voice map
+        voice_map: dict[str, str] = {
+            "Host": host_voice,
+            "Expert": expert_voice,
+            "Narrator": narrator_voice,
+        }
 
         # Chunk segments into batches
         batches = self._chunk_segments(script.segments)
@@ -255,7 +282,9 @@ class AudioGenerator:
         """Concatenate WAV chunks using ffmpeg."""
         filelist = cache_dir / "filelist.txt"
         filelist.write_text(
-            "\n".join(f"file '{p}'" for p in chunk_paths)
+            "\n".join(
+                f"file '{p.resolve()}'" for p in chunk_paths
+            )
         )
 
         cmd = [
@@ -268,12 +297,25 @@ class AudioGenerator:
             str(output_path),
         ]
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except FileNotFoundError as exc:
+            raise AudioGenerationError(
+                "ffmpeg is not installed or not on PATH"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise AudioGenerationError(
+                "ffmpeg concatenation timed out"
+            ) from exc
+        except OSError as exc:
+            raise AudioGenerationError(
+                f"ffmpeg execution error: {exc}"
+            ) from exc
 
         if result.returncode != 0:
             raise AudioGenerationError(

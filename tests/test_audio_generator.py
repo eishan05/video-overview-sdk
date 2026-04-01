@@ -838,3 +838,153 @@ class TestModelName:
         call_kwargs = mock_client.models.generate_content.call_args
         config = call_kwargs.kwargs["config"]
         assert config.response_modalities == ["AUDIO"]
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: empty script
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyScript:
+    def test_empty_segments_raises_error(self, generator, tmp_path):
+        """Script with no segments should raise AudioGenerationError."""
+        script = Script(title="Empty", segments=[])
+        with pytest.raises(AudioGenerationError, match="at least one segment"):
+            generator.generate(
+                script=script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: speaker validation
+# ---------------------------------------------------------------------------
+
+
+class TestSpeakerValidation:
+    def test_unknown_speaker_raises_error(self, generator, tmp_path):
+        """Script with unknown speaker should raise AudioGenerationError."""
+        script = _make_script([("Alien", "Hello!")])
+        with pytest.raises(AudioGenerationError, match="Unknown speaker"):
+            generator.generate(
+                script=script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+            )
+
+    def test_mixed_modes_raises_error(self, generator, tmp_path):
+        """Script mixing Host and Narrator should raise error."""
+        script = _make_script([
+            ("Host", "Hello!"),
+            ("Narrator", "Welcome."),
+        ])
+        with pytest.raises(AudioGenerationError, match="mixes"):
+            generator.generate(
+                script=script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+            )
+
+    def test_host_only_conversation_uses_multi_speaker(
+        self, generator, tmp_path, mocker
+    ):
+        """A conversation script with only Host still uses conversation mode."""
+        script = _make_script([("Host", "Solo host segment.")])
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(
+            wav_data
+        )
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        call_kwargs = mock_client.models.generate_content.call_args
+        config = call_kwargs.kwargs["config"]
+        # Should still use multi-speaker config for conversation speakers
+        assert (
+            config.speech_config.multi_speaker_voice_config is not None
+        )
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: ffmpeg errors
+# ---------------------------------------------------------------------------
+
+
+class TestFFmpegErrors:
+    def test_ffmpeg_not_found_raises_error(
+        self, generator, large_script, tmp_path, mocker
+    ):
+        """Missing ffmpeg should raise AudioGenerationError."""
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(
+            wav_data
+        )
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            side_effect=FileNotFoundError("ffmpeg not found"),
+        )
+
+        with pytest.raises(AudioGenerationError, match="not installed"):
+            generator.generate(
+                script=large_script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+            )
+
+    def test_ffmpeg_timeout_raises_error(
+        self, generator, large_script, tmp_path, mocker
+    ):
+        """ffmpeg timeout should raise AudioGenerationError."""
+        import subprocess as sp
+
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(
+            wav_data
+        )
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            side_effect=sp.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        )
+
+        with pytest.raises(AudioGenerationError, match="timed out"):
+            generator.generate(
+                script=large_script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+            )
