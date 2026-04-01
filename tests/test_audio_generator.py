@@ -892,10 +892,10 @@ class TestSpeakerValidation:
                 cache_dir=tmp_path,
             )
 
-    def test_host_only_conversation_uses_multi_speaker(
+    def test_host_only_conversation_uses_single_voice(
         self, generator, tmp_path, mocker
     ):
-        """A conversation script with only Host still uses conversation mode."""
+        """Host-only batch uses single VoiceConfig with Host voice."""
         script = _make_script([("Host", "Solo host segment.")])
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
@@ -921,9 +921,11 @@ class TestSpeakerValidation:
 
         call_kwargs = mock_client.models.generate_content.call_args
         config = call_kwargs.kwargs["config"]
-        # Should still use multi-speaker config for conversation speakers
+        # Single-speaker batch should use single VoiceConfig
+        assert config.speech_config.voice_config is not None
         assert (
-            config.speech_config.multi_speaker_voice_config is not None
+            config.speech_config.voice_config
+            .prebuilt_voice_config.voice_name == "Aoede"
         )
 
 

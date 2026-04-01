@@ -175,10 +175,15 @@ class AudioGenerator:
         is_multi_speaker: bool,
         voice_map: dict[str, str],
     ) -> types.GenerateContentConfig:
-        """Build the GenerateContentConfig for the TTS call."""
-        if is_multi_speaker:
-            # Collect unique speakers in this batch
-            batch_speakers = {seg.speaker for seg in segments}
+        """Build the GenerateContentConfig for the TTS call.
+
+        Uses MultiSpeakerVoiceConfig only when the batch actually
+        contains 2+ distinct speakers. Falls back to single VoiceConfig
+        when a batch has only one speaker (even in conversation mode).
+        """
+        batch_speakers = {seg.speaker for seg in segments}
+
+        if is_multi_speaker and len(batch_speakers) > 1:
             speaker_voice_configs = [
                 types.SpeakerVoiceConfig(
                     speaker=speaker,
@@ -196,8 +201,8 @@ class AudioGenerator:
                 )
             )
         else:
-            # Single speaker
-            speaker = segments[0].speaker
+            # Single speaker in this batch
+            speaker = next(iter(batch_speakers))
             speech_config = types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -281,9 +286,14 @@ class AudioGenerator:
     ) -> None:
         """Concatenate WAV chunks using ffmpeg."""
         filelist = cache_dir / "filelist.txt"
+        # Escape single quotes for ffmpeg concat format:
+        # replace ' with '\'' (end quote, escaped quote, start quote)
         filelist.write_text(
             "\n".join(
-                f"file '{p.resolve()}'" for p in chunk_paths
+                "file '{}'".format(
+                    str(p.resolve()).replace("'", "'\\''")
+                )
+                for p in chunk_paths
             )
         )
 
