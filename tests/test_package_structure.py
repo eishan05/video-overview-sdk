@@ -1,5 +1,7 @@
 """Smoke tests to verify package structure and imports."""
 
+from click.testing import CliRunner
+
 
 def test_import_video_overview():
     """Test that the main package is importable."""
@@ -59,3 +61,24 @@ def test_public_api_exports():
     # __all__ should be defined
     assert hasattr(video_overview, "__all__")
     assert isinstance(video_overview.__all__, list)
+
+
+def test_all_exports_resolvable():
+    """Test that every name in __all__ is actually accessible on the module."""
+    import video_overview
+
+    for name in video_overview.__all__:
+        assert hasattr(video_overview, name), (
+            f"{name!r} is listed in __all__ but is not an attribute of video_overview"
+        )
+
+
+def test_cli_version():
+    """Test that the CLI entry point responds to --version."""
+    from video_overview.cli import main
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--version"])
+    assert result.exit_code == 0
+    assert "video-overview" in result.output
+    assert "0.1.0" in result.output
