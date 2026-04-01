@@ -19,6 +19,29 @@ def _progress(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+def _run_async(coro):
+    """Run an async coroutine from synchronous code.
+
+    Uses ``asyncio.run()`` when no event loop is active.  When called
+    from inside a running loop (e.g. Jupyter notebooks, async test
+    runners), falls back to running in a new thread with its own loop.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is None:
+        return asyncio.run(coro)
+
+    # Already inside a running loop -- run in a separate thread
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result()
+
+
 async def _run_audio_and_visuals(
     audio_gen: AudioGenerator,
     visual_gen: VisualGenerator,
@@ -126,7 +149,7 @@ def create_overview(
         audio_gen = AudioGenerator(api_key=api_key)
         visual_gen = VisualGenerator(api_key=api_key)
 
-        audio_result, image_paths = asyncio.run(
+        audio_result, image_paths = _run_async(
             _run_audio_and_visuals(audio_gen, visual_gen, script, config)
         )
         audio_path, segment_durations = audio_result
@@ -153,7 +176,17 @@ def create_overview(
             cache_dir=config.cache_dir,
         )
         audio_path, segment_durations = audio_result
-        output_path = audio_path
+
+        # Convert/copy to the user-specified output path
+        _progress("Writing audio output...")
+        assembler = VideoAssembler()
+        output_path = assembler.assemble(
+            audio_path=audio_path,
+            image_paths=[],
+            segment_durations=segment_durations,
+            output_path=config.output,
+            format="audio",
+        )
 
     # ---- 7. Build and return result ----
     _progress("Done.")

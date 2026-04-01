@@ -301,14 +301,17 @@ class TestFullPipelineAudioMode:
 
         all_mocks["visual_inst"].generate.assert_not_called()
 
-    def test_skips_video_assembly(self, tmp_source, all_mocks):
+    def test_assembles_as_audio_not_video(self, tmp_source, all_mocks):
         from video_overview.core import create_overview
 
         out = tmp_source / "output.mp3"
         config = _make_config(tmp_source, format="audio", output=out)
         create_overview(config=config)
 
-        all_mocks["assembler_inst"].assemble.assert_not_called()
+        call_kwargs = (
+            all_mocks["assembler_inst"].assemble.call_args
+        )
+        assert call_kwargs.kwargs["format"] == "audio"
 
     def test_still_calls_content_reader(self, tmp_source, all_mocks):
         from video_overview.core import create_overview
@@ -537,33 +540,62 @@ class TestVideoAssemblerError:
 class TestConcurrentGeneration:
     """Audio and visual generation run concurrently via asyncio."""
 
-    def test_audio_and_visual_run_concurrently(self, tmp_source, all_mocks):
-        """Verify both audio and visual generation are kicked off
-        before either result is consumed."""
+    def test_audio_and_visual_both_execute(
+        self, tmp_source, all_mocks
+    ):
+        """Verify both audio and visual generation are invoked."""
         from video_overview.core import create_overview
-
-        execution_log = []
-
-        def audio_generate(*a, **kw):
-            execution_log.append("audio_start")
-            execution_log.append("audio_end")
-            return (Path("/tmp/cache/output.wav"), [2.0, 3.0, 2.5])
-
-        all_mocks["audio_inst"].generate.side_effect = audio_generate
-
-        async def visual_generate(*a, **kw):
-            execution_log.append("visual_start")
-            execution_log.append("visual_end")
-            return [Path("/tmp/cache/visuals/img0.png")] * 3
-
-        all_mocks["visual_inst"].generate = AsyncMock(side_effect=visual_generate)
 
         config = _make_config(tmp_source, format="video")
         create_overview(config=config)
 
-        # Both must have been called
-        assert "audio_start" in execution_log
-        assert "visual_start" in execution_log
+        all_mocks["audio_inst"].generate.assert_called_once()
+        all_mocks["visual_inst"].generate.assert_called_once()
+
+    def test_uses_asyncio_for_concurrency(
+        self, tmp_source, all_mocks
+    ):
+        """Verify the orchestrator dispatches audio and visuals
+        through the async helper, which uses asyncio.gather for
+        concurrent execution."""
+        import threading
+
+        from video_overview.core import create_overview
+
+        audio_thread_id = None
+        visual_thread_id = None
+
+        def audio_generate(*a, **kw):
+            nonlocal audio_thread_id
+            audio_thread_id = threading.current_thread().ident
+            return (
+                Path("/tmp/cache/output.wav"),
+                [2.0, 3.0, 2.5],
+            )
+
+        all_mocks["audio_inst"].generate.side_effect = (
+            audio_generate
+        )
+
+        async def visual_generate(*a, **kw):
+            nonlocal visual_thread_id
+            visual_thread_id = threading.current_thread().ident
+            return [Path("/tmp/cache/visuals/img0.png")] * 3
+
+        all_mocks["visual_inst"].generate = AsyncMock(
+            side_effect=visual_generate
+        )
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        # Both must have executed
+        assert audio_thread_id is not None
+        assert visual_thread_id is not None
+        # Audio runs in executor (different thread), visual runs
+        # in the event loop thread -- they should differ, proving
+        # concurrent dispatch via asyncio
+        assert audio_thread_id != visual_thread_id
 
 
 # ---------------------------------------------------------------------------
@@ -608,10 +640,12 @@ class TestOverviewResultPopulation:
         )
 
         out = tmp_source / "output.mp3"
+        # Assembler returns the final output path
+        all_mocks["assembler_inst"].assemble.return_value = out
         config = _make_config(tmp_source, format="audio", output=out)
         result = create_overview(config=config)
 
-        assert result.output_path == audio_path
+        assert result.output_path == out
         assert result.duration_seconds == pytest.approx(6.0)
         assert result.segments_count == 3
 
