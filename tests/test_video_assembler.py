@@ -533,6 +533,30 @@ class TestVideoTimeline:
         assert len(t_values) == 1
         assert abs(t_values[0] - 10.0) < 0.01
 
+    def test_non_integer_duration_uses_ceil_for_frames(
+        self, assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Non-integer durations should use math.ceil for frame counts."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        # 5.02s * 30fps = 150.6 frames -> ceil to 151
+        assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.02],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        # Should have d=151 (ceil of 150.6), not d=150
+        assert "d=151" in cmd_str
+
 
 # ---------------------------------------------------------------------------
 # FFmpeg command failures

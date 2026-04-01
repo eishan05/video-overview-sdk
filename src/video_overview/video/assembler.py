@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -249,11 +250,16 @@ class VideoAssembler:
         filters: list[str] = []
         n = len(image_paths)
 
-        # Build zoompan filter for each image
+        # Build zoompan filter for each image.
+        # Use math.ceil for frame counts to ensure each clip is at least as
+        # long as the requested duration. Derive xfade offsets from these
+        # frame-aligned durations so the timeline stays consistent.
         # Input indices: 0 = audio, 1..n = images
+        frame_aligned_durations: list[float] = []
         for i in range(n):
             input_idx = i + 1  # offset by 1 because audio is input 0
-            frames = max(1, int(_FPS * effective_durations[i]))
+            frames = max(1, math.ceil(_FPS * effective_durations[i]))
+            frame_aligned_durations.append(frames / _FPS)
             zoom_increment = (_MAX_ZOOM - 1.0) / frames
 
             filters.append(
@@ -272,12 +278,9 @@ class VideoAssembler:
             filters.append("[v0]copy[vout]")
         else:
             # Chain xfade transitions between consecutive images.
-            # The offset in the xfade filter is relative to the start of the
-            # merged timeline. After each xfade, the timeline absorbs both
-            # clips minus the overlap. We track the running offset as:
-            #   offset_0 = effective_durations[0] - crossfade
-            #   offset_i = offset_{i-1} + effective_durations[i] - crossfade
-            offset = effective_durations[0] - _CROSSFADE_DURATION
+            # Use frame-aligned durations for offset calculation so the
+            # timeline matches the actual zoompan output lengths.
+            offset = frame_aligned_durations[0] - _CROSSFADE_DURATION
             prev_label = "v0"
 
             for i in range(1, n):
@@ -296,7 +299,7 @@ class VideoAssembler:
 
                 prev_label = out_label
                 if i < n - 1:
-                    offset += effective_durations[i] - _CROSSFADE_DURATION
+                    offset += frame_aligned_durations[i] - _CROSSFADE_DURATION
 
         return ";".join(filters)
 
