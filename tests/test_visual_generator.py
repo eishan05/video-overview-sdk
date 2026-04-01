@@ -463,6 +463,35 @@ class TestCaching:
         expected = hashlib.md5(prompt.encode()).hexdigest()
         assert expected == _cache_key(prompt)
 
+    def test_duplicate_prompts_fallback_uses_segment_text(
+        self, generator, tmp_path, mocker
+    ):
+        """When API fails, segments with same prompt get per-segment fallback."""
+        script = _make_script([
+            ("Host", "First segment text.", "Shared prompt"),
+            ("Expert", "Second segment text.", "Shared prompt"),
+        ])
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception(
+            "API error"
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mock_run = mocker.patch(
+            "video_overview.visuals.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        result = asyncio.run(generator.generate(script, tmp_path))
+
+        assert len(result) == 2
+        # Segments with different text should get different fallback paths
+        assert result[0] != result[1]
+        # FFmpeg called twice (once per unique segment text)
+        assert mock_run.call_count == 2
+
 
 # ---------------------------------------------------------------------------
 # Fallback on API failure

@@ -120,10 +120,14 @@ class VisualGenerator:
         Checks cache first, then calls the API, with fallback to ffmpeg.
         The ``prompt_lock`` serialises tasks that share the same
         ``visual_prompt`` so only one makes the API call.
+
+        Successful API images are cached by visual_prompt hash.
+        Fallback images use a separate key that includes segment_text
+        so each segment gets its own text slide even when prompts match.
         """
         visuals_dir = cache_dir / "visuals"
-        cache_hash = hashlib.md5(visual_prompt.encode()).hexdigest()
-        cached_path = visuals_dir / f"{cache_hash}.png"
+        prompt_hash = hashlib.md5(visual_prompt.encode()).hexdigest()
+        cached_path = visuals_dir / f"{prompt_hash}.png"
 
         # Check cache before acquiring any locks (fast path)
         if cached_path.exists():
@@ -156,11 +160,17 @@ class VisualGenerator:
                         exc,
                     )
 
-                # Fallback: create text slide with ffmpeg
-                self._create_fallback_image(
-                    segment_text, cached_path
-                )
-                return cached_path
+                # Fallback: use segment_text in the cache key so each
+                # segment gets its own text slide even when prompts match.
+                fallback_key = hashlib.md5(
+                    f"{visual_prompt}::{segment_text}".encode()
+                ).hexdigest()
+                fallback_path = visuals_dir / f"{fallback_key}.png"
+                if not fallback_path.exists():
+                    self._create_fallback_image(
+                        segment_text, fallback_path
+                    )
+                return fallback_path
 
     # ------------------------------------------------------------------
     # API call
