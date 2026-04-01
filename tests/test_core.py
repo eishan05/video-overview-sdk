@@ -308,9 +308,7 @@ class TestFullPipelineAudioMode:
         config = _make_config(tmp_source, format="audio", output=out)
         create_overview(config=config)
 
-        call_kwargs = (
-            all_mocks["assembler_inst"].assemble.call_args
-        )
+        call_kwargs = all_mocks["assembler_inst"].assemble.call_args
         assert call_kwargs.kwargs["format"] == "audio"
 
     def test_still_calls_content_reader(self, tmp_source, all_mocks):
@@ -349,9 +347,7 @@ class TestFullPipelineAudioMode:
 
         assert isinstance(result, OverviewResult)
 
-    def test_wav_output_skips_assembler(
-        self, tmp_source, all_mocks
-    ):
+    def test_wav_output_skips_assembler(self, tmp_source, all_mocks):
         """WAV audio output uses shutil.copy2, not VideoAssembler."""
         from video_overview.core import create_overview
 
@@ -363,9 +359,7 @@ class TestFullPipelineAudioMode:
         # Assembler should NOT be instantiated for WAV output
         all_mocks["assembler_cls"].assert_not_called()
 
-    def test_mp3_output_uses_assembler(
-        self, tmp_source, all_mocks
-    ):
+    def test_mp3_output_uses_assembler(self, tmp_source, all_mocks):
         """Non-WAV audio output routes through VideoAssembler."""
         from video_overview.core import create_overview
 
@@ -375,9 +369,7 @@ class TestFullPipelineAudioMode:
 
         all_mocks["assembler_cls"].assert_called_once()
 
-    def test_wav_output_same_path_no_error(
-        self, tmp_source, all_mocks
-    ):
+    def test_wav_output_same_path_no_error(self, tmp_source, all_mocks):
         """When output path equals the cache WAV path, no
         SameFileError should occur."""
         from video_overview.core import create_overview
@@ -390,9 +382,7 @@ class TestFullPipelineAudioMode:
             cache_wav,
             [2.0, 3.0],
         )
-        config = _make_config(
-            tmp_source, format="audio", output=cache_wav
-        )
+        config = _make_config(tmp_source, format="audio", output=cache_wav)
         # Should not raise SameFileError
         result = create_overview(config=config)
         assert result.output_path == cache_wav
@@ -529,8 +519,8 @@ class TestScriptGeneratorError:
         from video_overview.core import create_overview
         from video_overview.script.generator import ScriptGenerationError
 
-        all_mocks["script_generator"].generate.side_effect = (
-            ScriptGenerationError("LLM failed")
+        all_mocks["script_generator"].generate.side_effect = ScriptGenerationError(
+            "LLM failed"
         )
         config = _make_config(tmp_source)
 
@@ -543,8 +533,8 @@ class TestAudioGeneratorError:
         from video_overview.audio.generator import AudioGenerationError
         from video_overview.core import create_overview
 
-        all_mocks["audio_inst"].generate.side_effect = (
-            AudioGenerationError("TTS failed")
+        all_mocks["audio_inst"].generate.side_effect = AudioGenerationError(
+            "TTS failed"
         )
         config = _make_config(tmp_source)
 
@@ -571,8 +561,8 @@ class TestVideoAssemblerError:
         from video_overview.core import create_overview
         from video_overview.video.assembler import VideoAssemblyError
 
-        all_mocks["assembler_inst"].assemble.side_effect = (
-            VideoAssemblyError("ffmpeg broken")
+        all_mocks["assembler_inst"].assemble.side_effect = VideoAssemblyError(
+            "ffmpeg broken"
         )
         config = _make_config(tmp_source, format="video")
 
@@ -588,9 +578,7 @@ class TestVideoAssemblerError:
 class TestConcurrentGeneration:
     """Audio and visual generation run concurrently via asyncio."""
 
-    def test_audio_and_visual_both_execute(
-        self, tmp_source, all_mocks
-    ):
+    def test_audio_and_visual_both_execute(self, tmp_source, all_mocks):
         """Verify both audio and visual generation are invoked."""
         from video_overview.core import create_overview
 
@@ -600,9 +588,7 @@ class TestConcurrentGeneration:
         all_mocks["audio_inst"].generate.assert_called_once()
         all_mocks["visual_inst"].generate.assert_called_once()
 
-    def test_uses_asyncio_for_concurrency(
-        self, tmp_source, all_mocks
-    ):
+    def test_uses_asyncio_for_concurrency(self, tmp_source, all_mocks):
         """Verify the orchestrator dispatches audio and visuals
         through the async helper, which uses asyncio.gather for
         concurrent execution."""
@@ -621,18 +607,14 @@ class TestConcurrentGeneration:
                 [2.0, 3.0, 2.5],
             )
 
-        all_mocks["audio_inst"].generate.side_effect = (
-            audio_generate
-        )
+        all_mocks["audio_inst"].generate.side_effect = audio_generate
 
         async def visual_generate(*a, **kw):
             nonlocal visual_thread_id
             visual_thread_id = threading.current_thread().ident
             return [Path("/tmp/cache/visuals/img0.png")] * 3
 
-        all_mocks["visual_inst"].generate = AsyncMock(
-            side_effect=visual_generate
-        )
+        all_mocks["visual_inst"].generate = AsyncMock(side_effect=visual_generate)
 
         config = _make_config(tmp_source, format="video")
         create_overview(config=config)

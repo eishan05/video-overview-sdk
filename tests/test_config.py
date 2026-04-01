@@ -16,6 +16,7 @@ from video_overview.config import (
 # ScriptSegment
 # ---------------------------------------------------------------------------
 
+
 class TestScriptSegment:
     """Tests for ScriptSegment model."""
 
@@ -45,6 +46,7 @@ class TestScriptSegment:
 # ---------------------------------------------------------------------------
 # Script
 # ---------------------------------------------------------------------------
+
 
 class TestScript:
     """Tests for Script model."""
@@ -76,6 +78,7 @@ class TestScript:
 # ---------------------------------------------------------------------------
 # OverviewResult
 # ---------------------------------------------------------------------------
+
 
 class TestOverviewResult:
     """Tests for OverviewResult model."""
@@ -118,6 +121,7 @@ class TestOverviewResult:
 # OverviewConfig – defaults
 # ---------------------------------------------------------------------------
 
+
 class TestOverviewConfigDefaults:
     """Tests for OverviewConfig default values."""
 
@@ -153,6 +157,7 @@ class TestOverviewConfigDefaults:
 # ---------------------------------------------------------------------------
 # OverviewConfig – all fields specified
 # ---------------------------------------------------------------------------
+
 
 class TestOverviewConfigAllFields:
     """Tests for OverviewConfig with all fields specified."""
@@ -195,6 +200,7 @@ class TestOverviewConfigAllFields:
 # OverviewConfig – source_dir validation
 # ---------------------------------------------------------------------------
 
+
 class TestOverviewConfigSourceDirValidation:
     """Tests for source_dir validation."""
 
@@ -231,6 +237,7 @@ class TestOverviewConfigSourceDirValidation:
 # ---------------------------------------------------------------------------
 # OverviewConfig – output path validation
 # ---------------------------------------------------------------------------
+
 
 class TestOverviewConfigOutputValidation:
     """Tests for output path validation."""
@@ -271,6 +278,7 @@ class TestOverviewConfigOutputValidation:
 # ---------------------------------------------------------------------------
 # OverviewConfig – Literal validation
 # ---------------------------------------------------------------------------
+
 
 class TestOverviewConfigLiteralValidation:
     """Tests for mode and format literal validation."""
@@ -346,6 +354,7 @@ class TestOverviewConfigLiteralValidation:
 # OverviewConfig – GEMINI_API_KEY / GOOGLE_API_KEY env var loading
 # ---------------------------------------------------------------------------
 
+
 class TestOverviewConfigGeminiApiKey:
     """Tests for gemini_api_key property and env var loading."""
 
@@ -397,6 +406,7 @@ class TestOverviewConfigGeminiApiKey:
 # ---------------------------------------------------------------------------
 # OverviewConfig – cache_dir
 # ---------------------------------------------------------------------------
+
 
 class TestOverviewConfigCacheDir:
     """Tests for cache_dir behaviour."""
@@ -471,6 +481,7 @@ class TestOverviewConfigCacheDir:
 # ---------------------------------------------------------------------------
 # Exports from top-level package
 # ---------------------------------------------------------------------------
+
 
 class TestExports:
     """Verify models are exported from the top-level package."""

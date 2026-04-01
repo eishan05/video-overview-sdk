@@ -67,27 +67,19 @@ def _validate_output_parent(
     "-i",
     multiple=True,
     default=["*"],
-    help=(
-        "Glob patterns for files to include. "
-        "Can be specified multiple times."
-    ),
+    help=("Glob patterns for files to include. Can be specified multiple times."),
 )
 @click.option(
     "--exclude",
     "-e",
     multiple=True,
     default=[],
-    help=(
-        "Glob patterns for files to exclude. "
-        "Can be specified multiple times."
-    ),
+    help=("Glob patterns for files to exclude. Can be specified multiple times."),
 )
 @click.option(
     "--mode",
     "-m",
-    type=click.Choice(
-        ["conversation", "narration"], case_sensitive=False
-    ),
+    type=click.Choice(["conversation", "narration"], case_sensitive=False),
     default="conversation",
     help="Script mode: conversation or narration.",
 )

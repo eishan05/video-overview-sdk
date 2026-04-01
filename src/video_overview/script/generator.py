@@ -113,9 +113,7 @@ class ScriptGenerator:
             )
         else:
             # Should not reach here due to validation in generate()
-            raise ScriptGenerationError(
-                f"Invalid mode: {mode!r}"
-            )
+            raise ScriptGenerationError(f"Invalid mode: {mode!r}")
 
         content_text = self._format_content_bundle(content_bundle)
 
@@ -126,17 +124,17 @@ class ScriptGenerator:
             f"OUTPUT FORMAT:\n"
             f"Return ONLY a JSON object (no markdown fences, no extra text) "
             f"matching this schema:\n"
-            f'{{\n'
+            f"{{\n"
             f'  "title": "<engaging title for the overview>",\n'
             f'  "segments": [\n'
-            f'    {{\n'
+            f"    {{\n"
             f'      "speaker": "<speaker name>",\n'
             f'      "text": "<what the speaker says>",\n'
             f'      "visual_prompt": "<description of an informative diagram/'
             f'illustration to accompany this segment>"\n'
-            f'    }}\n'
-            f'  ]\n'
-            f'}}\n\n'
+            f"    }}\n"
+            f"  ]\n"
+            f"}}\n\n"
             f"CONSTRAINTS:\n"
             f"- Maximum {max_segments} segments\n"
             f"- Each segment must have speaker, text, and visual_prompt fields\n"
@@ -167,9 +165,7 @@ class ScriptGenerator:
 
         total_files = content_bundle.get("total_files", 0)
         total_chars = content_bundle.get("total_chars", 0)
-        parts.append(
-            f"\nTotal files: {total_files}, Total characters: {total_chars}"
-        )
+        parts.append(f"\nTotal files: {total_files}, Total characters: {total_chars}")
 
         return "\n".join(parts)
 
@@ -184,9 +180,7 @@ class ScriptGenerator:
         elif llm_backend == "codex":
             cmd = ["codex", "exec", prompt]
         else:
-            raise ScriptGenerationError(
-                f"Unsupported LLM backend: {llm_backend}"
-            )
+            raise ScriptGenerationError(f"Unsupported LLM backend: {llm_backend}")
 
         try:
             result = subprocess.run(
@@ -226,11 +220,7 @@ class ScriptGenerator:
             ) from exc
 
         # Handle Claude --output-format json wrapper
-        if (
-            isinstance(data, dict)
-            and data.get("type") == "result"
-            and "result" in data
-        ):
+        if isinstance(data, dict) and data.get("type") == "result" and "result" in data:
             # Check for Claude error responses
             if data.get("is_error"):
                 raise ScriptGenerationError(
@@ -242,8 +232,7 @@ class ScriptGenerator:
                     data = json.loads(inner)
                 except json.JSONDecodeError as exc:
                     raise ScriptGenerationError(
-                        "Failed to parse inner Claude JSON "
-                        f"result: {exc}"
+                        f"Failed to parse inner Claude JSON result: {exc}"
                     ) from exc
 
         try:

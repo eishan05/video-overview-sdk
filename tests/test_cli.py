@@ -58,8 +58,10 @@ class TestBasicInvocation:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "Python basics",
-                    "--output", str(output_file),
+                    "--topic",
+                    "Python basics",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 0
@@ -75,8 +77,10 @@ class TestBasicInvocation:
                 main,
                 [
                     str(source_dir),
-                    "-t", "Python basics",
-                    "-o", str(output_file),
+                    "-t",
+                    "Python basics",
+                    "-o",
+                    str(output_file),
                 ],
             )
         assert str(output_file) in result.output
@@ -94,8 +98,10 @@ class TestBasicInvocation:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "Python",
-                    "--output", str(output_file),
+                    "--topic",
+                    "Python",
+                    "--output",
+                    str(output_file),
                 ],
             )
         mock_fn.assert_called_once()
@@ -119,19 +125,32 @@ class TestAllOptionsSpecified:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "Advanced Python",
-                    "--output", str(output_file),
-                    "--include", "*.py",
-                    "--include", "*.md",
-                    "--exclude", "*.pyc",
-                    "--exclude", "__pycache__",
-                    "--mode", "narration",
-                    "--format", "audio",
-                    "--host-voice", "Puck",
-                    "--expert-voice", "Kore",
-                    "--narrator-voice", "Aoede",
-                    "--llm", "codex",
-                    "--max-duration", "20",
+                    "--topic",
+                    "Advanced Python",
+                    "--output",
+                    str(output_file),
+                    "--include",
+                    "*.py",
+                    "--include",
+                    "*.md",
+                    "--exclude",
+                    "*.pyc",
+                    "--exclude",
+                    "__pycache__",
+                    "--mode",
+                    "narration",
+                    "--format",
+                    "audio",
+                    "--host-voice",
+                    "Puck",
+                    "--expert-voice",
+                    "Kore",
+                    "--narrator-voice",
+                    "Aoede",
+                    "--llm",
+                    "codex",
+                    "--max-duration",
+                    "20",
                 ],
             )
         assert result.exit_code == 0
@@ -150,9 +169,7 @@ class TestAllOptionsSpecified:
 class TestMissingRequiredArgs:
     """Test that missing required args produce errors."""
 
-    def test_missing_topic_fails(
-        self, runner, source_dir, output_file
-    ):
+    def test_missing_topic_fails(self, runner, source_dir, output_file):
         result = runner.invoke(
             main,
             [str(source_dir), "--output", str(output_file)],
@@ -185,35 +202,34 @@ class TestMissingRequiredArgs:
 class TestInvalidChoices:
     """Test that invalid choice values produce errors."""
 
-    def test_invalid_mode_fails(
-        self, runner, source_dir, output_file
-    ):
+    def test_invalid_mode_fails(self, runner, source_dir, output_file):
         result = runner.invoke(
             main,
             [
                 str(source_dir),
-                "--topic", "test",
-                "--output", str(output_file),
-                "--mode", "invalid_mode",
+                "--topic",
+                "test",
+                "--output",
+                str(output_file),
+                "--mode",
+                "invalid_mode",
             ],
         )
         assert result.exit_code != 0
         out_lower = result.output.lower()
-        assert (
-            "invalid_mode" in out_lower
-            or "invalid" in out_lower
-        )
+        assert "invalid_mode" in out_lower or "invalid" in out_lower
 
-    def test_invalid_format_fails(
-        self, runner, source_dir, output_file
-    ):
+    def test_invalid_format_fails(self, runner, source_dir, output_file):
         result = runner.invoke(
             main,
             [
                 str(source_dir),
-                "--topic", "test",
-                "--output", str(output_file),
-                "--format", "pdf",
+                "--topic",
+                "test",
+                "--output",
+                str(output_file),
+                "--format",
+                "pdf",
             ],
         )
         assert result.exit_code != 0
@@ -224,61 +240,61 @@ class TestInvalidChoices:
 class TestInputValidation:
     """Test Click-level validation for paths and ranges."""
 
-    def test_nonexistent_source_dir_fails(
-        self, runner, tmp_path, output_file
-    ):
+    def test_nonexistent_source_dir_fails(self, runner, tmp_path, output_file):
         bad_dir = str(tmp_path / "does_not_exist")
         result = runner.invoke(
             main,
             [
                 bad_dir,
-                "--topic", "test",
-                "--output", str(output_file),
+                "--topic",
+                "test",
+                "--output",
+                str(output_file),
             ],
         )
         assert result.exit_code != 0
         assert "does not exist" in result.output.lower()
 
-    def test_zero_max_duration_fails(
-        self, runner, source_dir, output_file
-    ):
+    def test_zero_max_duration_fails(self, runner, source_dir, output_file):
         result = runner.invoke(
             main,
             [
                 str(source_dir),
-                "--topic", "test",
-                "--output", str(output_file),
-                "--max-duration", "0",
+                "--topic",
+                "test",
+                "--output",
+                str(output_file),
+                "--max-duration",
+                "0",
             ],
         )
         assert result.exit_code != 0
 
-    def test_negative_max_duration_fails(
-        self, runner, source_dir, output_file
-    ):
+    def test_negative_max_duration_fails(self, runner, source_dir, output_file):
         result = runner.invoke(
             main,
             [
                 str(source_dir),
-                "--topic", "test",
-                "--output", str(output_file),
-                "--max-duration", "-5",
+                "--topic",
+                "test",
+                "--output",
+                str(output_file),
+                "--max-duration",
+                "-5",
             ],
         )
         assert result.exit_code != 0
 
-    def test_nonexistent_output_parent_fails(
-        self, runner, source_dir, tmp_path
-    ):
-        bad_output = str(
-            tmp_path / "missing_dir" / "output.mp4"
-        )
+    def test_nonexistent_output_parent_fails(self, runner, source_dir, tmp_path):
+        bad_output = str(tmp_path / "missing_dir" / "output.mp4")
         result = runner.invoke(
             main,
             [
                 str(source_dir),
-                "--topic", "test",
-                "--output", bad_output,
+                "--topic",
+                "test",
+                "--output",
+                bad_output,
             ],
         )
         assert result.exit_code != 0
@@ -299,11 +315,16 @@ class TestMultiplePatterns:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
-                    "-i", "*.py",
-                    "-i", "*.js",
-                    "-i", "*.md",
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "-i",
+                    "*.py",
+                    "-i",
+                    "*.js",
+                    "-i",
+                    "*.md",
                 ],
             )
         assert result.exit_code == 0
@@ -321,10 +342,14 @@ class TestMultiplePatterns:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
-                    "-e", "*.pyc",
-                    "-e", "node_modules",
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "-e",
+                    "*.pyc",
+                    "-e",
+                    "node_modules",
                 ],
             )
         assert result.exit_code == 0
@@ -342,8 +367,10 @@ class TestMultiplePatterns:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 0
@@ -354,9 +381,7 @@ class TestMultiplePatterns:
 class TestKeyboardInterrupt:
     """Test that KeyboardInterrupt is handled gracefully."""
 
-    def test_keyboard_interrupt_exits_130(
-        self, runner, source_dir, output_file
-    ):
+    def test_keyboard_interrupt_exits_130(self, runner, source_dir, output_file):
         with patch(
             "video_overview.cli.create_overview",
             side_effect=KeyboardInterrupt,
@@ -365,8 +390,10 @@ class TestKeyboardInterrupt:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 130
@@ -376,29 +403,25 @@ class TestKeyboardInterrupt:
 class TestErrorHandling:
     """Test that errors from create_overview are handled gracefully."""
 
-    def test_value_error_displays_message(
-        self, runner, source_dir, output_file
-    ):
+    def test_value_error_displays_message(self, runner, source_dir, output_file):
         with patch(
             "video_overview.cli.create_overview",
-            side_effect=ValueError(
-                "Gemini API key is required"
-            ),
+            side_effect=ValueError("Gemini API key is required"),
         ):
             result = runner.invoke(
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
         assert "Gemini API key is required" in result.output
 
-    def test_runtime_error_displays_message(
-        self, runner, source_dir, output_file
-    ):
+    def test_runtime_error_displays_message(self, runner, source_dir, output_file):
         with patch(
             "video_overview.cli.create_overview",
             side_effect=RuntimeError("ffmpeg not found"),
@@ -407,16 +430,16 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
         assert "ffmpeg not found" in result.output
 
-    def test_os_error_displays_message(
-        self, runner, source_dir, output_file
-    ):
+    def test_os_error_displays_message(self, runner, source_dir, output_file):
         with patch(
             "video_overview.cli.create_overview",
             side_effect=OSError("Permission denied"),
@@ -425,8 +448,10 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
@@ -443,8 +468,10 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
@@ -461,8 +488,10 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
@@ -479,8 +508,10 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
@@ -497,16 +528,16 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         assert result.exit_code == 1
         assert "visual err" in result.output
 
-    def test_unexpected_error_propagates(
-        self, runner, source_dir, output_file
-    ):
+    def test_unexpected_error_propagates(self, runner, source_dir, output_file):
         """Unexpected exceptions are not swallowed."""
         with patch(
             "video_overview.cli.create_overview",
@@ -516,8 +547,10 @@ class TestErrorHandling:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
         # TypeError is not caught, so Click reports it
@@ -528,9 +561,7 @@ class TestErrorHandling:
 class TestResultSummary:
     """Test that result summary is printed correctly."""
 
-    def test_summary_format(
-        self, runner, source_dir, output_file, mock_result
-    ):
+    def test_summary_format(self, runner, source_dir, output_file, mock_result):
         with patch(
             "video_overview.cli.create_overview",
             return_value=mock_result,
@@ -539,14 +570,13 @@ class TestResultSummary:
                 main,
                 [
                     str(source_dir),
-                    "--topic", "test",
-                    "--output", str(output_file),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
                 ],
             )
-        expected = (
-            f"Overview created: {output_file} "
-            f"(120.5s, 5 segments)"
-        )
+        expected = f"Overview created: {output_file} (120.5s, 5 segments)"
         assert expected in result.output
 
 
