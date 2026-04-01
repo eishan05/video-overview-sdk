@@ -21,15 +21,15 @@ from pydantic import (
 class ScriptSegment(BaseModel):
     """A single segment of a generated script."""
 
-    speaker: str
-    text: str
-    visual_prompt: str
+    speaker: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    visual_prompt: str = Field(min_length=1)
 
 
 class Script(BaseModel):
     """A complete script composed of ordered segments."""
 
-    title: str
+    title: str = Field(min_length=1)
     segments: list[ScriptSegment]
 
 
@@ -95,10 +95,20 @@ class OverviewConfig(BaseModel):
                 )
         return v
 
+    @staticmethod
+    def _check_cache_dir_is_not_file(path: Path) -> None:
+        """Raise if *path* exists and is not a directory."""
+        if path.exists() and not path.is_dir():
+            raise ValueError(
+                f"cache_dir exists but is not a directory: {path}"
+            )
+
     @model_validator(mode="after")
     def _set_cache_dir_default(self) -> OverviewConfig:
         if self.cache_dir is None:
-            self.cache_dir = self.source_dir / ".video_overview_cache"
+            default = self.source_dir / ".video_overview_cache"
+            self._check_cache_dir_is_not_file(default)
+            self.cache_dir = default
         return self
 
     @property

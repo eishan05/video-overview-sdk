@@ -29,9 +29,17 @@ class TestScriptSegment:
         with pytest.raises(ValidationError):
             ScriptSegment(speaker="Host", text="Hello")  # missing visual_prompt
 
-    def test_empty_strings_allowed(self):
-        seg = ScriptSegment(speaker="", text="", visual_prompt="")
-        assert seg.speaker == ""
+    def test_empty_speaker_rejected(self):
+        with pytest.raises(ValidationError):
+            ScriptSegment(speaker="", text="Hello", visual_prompt="A sunset")
+
+    def test_empty_text_rejected(self):
+        with pytest.raises(ValidationError):
+            ScriptSegment(speaker="Host", text="", visual_prompt="A sunset")
+
+    def test_empty_visual_prompt_rejected(self):
+        with pytest.raises(ValidationError):
+            ScriptSegment(speaker="Host", text="Hello", visual_prompt="")
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +67,10 @@ class TestScript:
     def test_missing_segments_raises(self):
         with pytest.raises(ValidationError):
             Script(title="No segments")  # missing segments
+
+    def test_empty_title_rejected(self):
+        with pytest.raises(ValidationError):
+            Script(title="", segments=[])
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +452,20 @@ class TestOverviewConfigCacheDir:
             cache_dir=cache_dir,
         )
         assert cfg.cache_dir == cache_dir
+
+    def test_default_cache_dir_rejects_existing_file(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        # Create a file at the default cache_dir path
+        default_cache = source / ".video_overview_cache"
+        default_cache.write_text("I am a file, not a directory")
+
+        with pytest.raises(ValidationError, match="cache_dir"):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+            )
 
 
 # ---------------------------------------------------------------------------
