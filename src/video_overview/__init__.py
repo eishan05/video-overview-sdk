@@ -9,6 +9,7 @@ from video_overview.config import (
     Script,
     ScriptSegment,
 )
+from video_overview.core import create_overview
 
 try:
     __version__ = version("video-overview")
@@ -23,6 +24,7 @@ __all__ = [
     "ScriptSegment",
     "audio",
     "content",
+    "create_overview",
     "script",
     "video",
     "visuals",
