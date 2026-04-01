@@ -120,6 +120,51 @@ class TestInputValidation:
                 format="video",
             )
 
+    def test_non_positive_duration_raises_error(
+        self, assembler, audio_path, single_image, tmp_path
+    ):
+        """Should raise when a segment duration is zero or negative."""
+        with pytest.raises(VideoAssemblyError, match="non-positive"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=single_image,
+                segment_durations=[0.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+
+    def test_negative_duration_raises_error(
+        self, assembler, audio_path, single_image, tmp_path
+    ):
+        """Should raise when a segment duration is negative."""
+        with pytest.raises(VideoAssemblyError, match="non-positive"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=single_image,
+                segment_durations=[-1.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+
+    def test_duration_shorter_than_crossfade_raises_error(
+        self, assembler, audio_path, tmp_path
+    ):
+        """Should raise when multi-image segment is shorter than crossfade."""
+        images = []
+        for i in range(2):
+            p = tmp_path / f"img_{i:03d}.png"
+            p.write_bytes(b"\x89PNG" + b"\x00" * 100)
+            images.append(p)
+
+        with pytest.raises(VideoAssemblyError, match="crossfade"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=images,
+                segment_durations=[0.3, 5.0],  # 0.3 < 0.5 crossfade
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+
 
 # ---------------------------------------------------------------------------
 # Audio format
@@ -416,17 +461,22 @@ class TestSegmentDurationEstimation:
         # Each should be ~10 seconds
         assert all(abs(d - 10.0) < 0.01 for d in durations)
 
+    def test_empty_segments_raises_error(self, assembler):
+        """Should raise VideoAssemblyError for empty segments list."""
+        with pytest.raises(VideoAssemblyError, match="empty"):
+            assembler._estimate_segment_durations([], 60.0)
+
 
 # ---------------------------------------------------------------------------
-# Temp file cleanup
+# Video timeline correctness
 # ---------------------------------------------------------------------------
 
 
-class TestTempFileCleanup:
-    def test_temp_files_cleaned_up_after_assembly(
+class TestVideoTimeline:
+    def test_effective_durations_compensate_for_crossfade(
         self, assembler, audio_path, three_images, tmp_path, mocker
     ):
-        """Temporary files should be cleaned up after successful assembly."""
+        """Image input durations should be extended to compensate for xfade overlap."""
         output = tmp_path / "output.mp4"
         mock_run = mocker.patch(
             "video_overview.video.assembler.subprocess.run",
@@ -441,8 +491,47 @@ class TestTempFileCleanup:
             format="video",
         )
 
-        # The assembler should have been called and no temp files remain
-        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        # Find -t values for image inputs (after the audio input)
+        t_values = []
+        for j, c in enumerate(cmd):
+            if c == "-t" and j > 2:  # skip any -t before audio
+                t_values.append(float(cmd[j + 1]))
+
+        # First image: 5.0 + 0.5 = 5.5s (extended for right overlap)
+        assert abs(t_values[0] - 5.5) < 0.01
+        # Second image: 5.0 + 0.5 = 5.5s (extended for left+right, but only
+        # interior clips get one additional overlap)
+        assert abs(t_values[1] - 5.5) < 0.01
+        # Third image: 5.0s (no extension, last clip)
+        assert abs(t_values[2] - 5.0) < 0.01
+
+    def test_single_image_no_duration_extension(
+        self, assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Single image should not have its duration extended."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[10.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        t_values = []
+        for j, c in enumerate(cmd):
+            if c == "-t" and j > 2:
+                t_values.append(float(cmd[j + 1]))
+
+        assert len(t_values) == 1
+        assert abs(t_values[0] - 10.0) < 0.01
 
 
 # ---------------------------------------------------------------------------

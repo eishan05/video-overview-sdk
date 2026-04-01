@@ -80,7 +80,15 @@ class VideoAssembler:
 
         Returns:
             List of estimated durations that sum to total_audio_duration.
+
+        Raises:
+            VideoAssemblyError: If segments list is empty.
         """
+        if not segments:
+            raise VideoAssemblyError(
+                "Cannot estimate durations for an empty segments list."
+            )
+
         total_chars = sum(len(seg.text) for seg in segments)
         if total_chars == 0:
             # Equal distribution if all texts are empty
@@ -138,7 +146,46 @@ class VideoAssembler:
                 f"{len(segment_durations)} durations provided."
             )
 
-        filter_complex = self._build_filter_complex(image_paths, segment_durations)
+        # Validate durations
+        _MIN_DURATION = 1.0 / _FPS  # at least one frame
+        for i, d in enumerate(segment_durations):
+            if d <= 0:
+                raise VideoAssemblyError(
+                    f"Segment {i} has non-positive duration ({d}s). "
+                    "All durations must be positive."
+                )
+            if d < _MIN_DURATION:
+                raise VideoAssemblyError(
+                    f"Segment {i} duration ({d}s) is too short to produce "
+                    f"even one frame at {_FPS}fps."
+                )
+
+        n = len(image_paths)
+        if n > 1:
+            for i, d in enumerate(segment_durations):
+                if d <= _CROSSFADE_DURATION:
+                    raise VideoAssemblyError(
+                        f"Segment {i} duration ({d}s) must be greater than "
+                        f"the crossfade duration ({_CROSSFADE_DURATION}s)."
+                    )
+
+        # Compute effective durations for each image input.
+        # Each xfade overlap shortens the timeline by _CROSSFADE_DURATION.
+        # To keep the total video timeline equal to sum(segment_durations),
+        # we extend each interior clip by the crossfade overlap it participates in.
+        effective_durations = list(segment_durations)
+        if n > 1:
+            # First clip is extended by one overlap (right side)
+            effective_durations[0] += _CROSSFADE_DURATION
+            # Interior clips are extended by two overlaps (left + right)
+            for i in range(1, n - 1):
+                effective_durations[i] += _CROSSFADE_DURATION
+            # Last clip needs no extension (its left side overlap is covered
+            # by the preceding clip's extension)
+
+        filter_complex = self._build_filter_complex(
+            image_paths, segment_durations, effective_durations
+        )
 
         # Build the ffmpeg command
         cmd: list[str] = ["ffmpeg", "-y"]
@@ -146,9 +193,9 @@ class VideoAssembler:
         # Add audio input first
         cmd.extend(["-i", str(audio_path)])
 
-        # Add each image as a looped input with its duration
-        for i, (img_path, duration) in enumerate(zip(image_paths, segment_durations)):
-            cmd.extend(["-loop", "1", "-t", str(duration), "-i", str(img_path)])
+        # Add each image as a looped input with its effective duration
+        for i, (img_path, eff_dur) in enumerate(zip(image_paths, effective_durations)):
+            cmd.extend(["-loop", "1", "-t", str(eff_dur), "-i", str(img_path)])
 
         # Add filter complex
         cmd.extend(["-filter_complex", filter_complex])
@@ -182,6 +229,7 @@ class VideoAssembler:
         self,
         image_paths: list[Path],
         segment_durations: list[float],
+        effective_durations: list[float],
     ) -> str:
         """Build the ffmpeg filter_complex string.
 
@@ -191,6 +239,12 @@ class VideoAssembler:
 
         Between images:
         - Apply xfade transitions with 0.5s crossfade
+
+        Args:
+            image_paths: Image file paths.
+            segment_durations: Original segment durations (for offset math).
+            effective_durations: Extended durations accounting for xfade overlap
+                (used for zoompan frame counts).
         """
         filters: list[str] = []
         n = len(image_paths)
@@ -199,8 +253,8 @@ class VideoAssembler:
         # Input indices: 0 = audio, 1..n = images
         for i in range(n):
             input_idx = i + 1  # offset by 1 because audio is input 0
-            frames = int(_FPS * segment_durations[i])
-            zoom_increment = (_MAX_ZOOM - 1.0) / max(frames, 1)
+            frames = max(1, int(_FPS * effective_durations[i]))
+            zoom_increment = (_MAX_ZOOM - 1.0) / frames
 
             filters.append(
                 f"[{input_idx}:v]"
@@ -217,8 +271,13 @@ class VideoAssembler:
             # Single image: just map it to output
             filters.append("[v0]copy[vout]")
         else:
-            # Chain xfade transitions between consecutive images
-            offset = segment_durations[0] - _CROSSFADE_DURATION
+            # Chain xfade transitions between consecutive images.
+            # The offset in the xfade filter is relative to the start of the
+            # merged timeline. After each xfade, the timeline absorbs both
+            # clips minus the overlap. We track the running offset as:
+            #   offset_0 = effective_durations[0] - crossfade
+            #   offset_i = offset_{i-1} + effective_durations[i] - crossfade
+            offset = effective_durations[0] - _CROSSFADE_DURATION
             prev_label = "v0"
 
             for i in range(1, n):
@@ -237,7 +296,7 @@ class VideoAssembler:
 
                 prev_label = out_label
                 if i < n - 1:
-                    offset += segment_durations[i] - _CROSSFADE_DURATION
+                    offset += effective_durations[i] - _CROSSFADE_DURATION
 
         return ";".join(filters)
 
