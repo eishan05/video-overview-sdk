@@ -125,6 +125,7 @@ class TestAllOptionsSpecified:
                     "--format", "audio",
                     "--host-voice", "Puck",
                     "--expert-voice", "Kore",
+                    "--narrator-voice", "Aoede",
                     "--llm", "codex",
                     "--max-duration", "20",
                 ],
@@ -137,6 +138,7 @@ class TestAllOptionsSpecified:
         assert config.format == "audio"
         assert config.host_voice == "Puck"
         assert config.expert_voice == "Kore"
+        assert config.narrator_voice == "Aoede"
         assert config.llm_backend == "codex"
         assert config.max_duration_minutes == 20
 
@@ -213,6 +215,53 @@ class TestInvalidChoices:
         assert result.exit_code != 0
         out_lower = result.output.lower()
         assert "pdf" in out_lower or "invalid" in out_lower
+
+
+class TestInputValidation:
+    """Test Click-level validation for paths and ranges."""
+
+    def test_nonexistent_source_dir_fails(
+        self, runner, tmp_path, output_file
+    ):
+        bad_dir = str(tmp_path / "does_not_exist")
+        result = runner.invoke(
+            main,
+            [
+                bad_dir,
+                "--topic", "test",
+                "--output", str(output_file),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "does not exist" in result.output.lower()
+
+    def test_zero_max_duration_fails(
+        self, runner, source_dir, output_file
+    ):
+        result = runner.invoke(
+            main,
+            [
+                str(source_dir),
+                "--topic", "test",
+                "--output", str(output_file),
+                "--max-duration", "0",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_negative_max_duration_fails(
+        self, runner, source_dir, output_file
+    ):
+        result = runner.invoke(
+            main,
+            [
+                str(source_dir),
+                "--topic", "test",
+                "--output", str(output_file),
+                "--max-duration", "-5",
+            ],
+        )
+        assert result.exit_code != 0
 
 
 class TestMultiplePatterns:
@@ -306,12 +355,14 @@ class TestKeyboardInterrupt:
 class TestErrorHandling:
     """Test that errors from create_overview are handled gracefully."""
 
-    def test_error_displays_message(
+    def test_value_error_displays_message(
         self, runner, source_dir, output_file
     ):
         with patch(
             "video_overview.cli.create_overview",
-            side_effect=ValueError("Gemini API key is required"),
+            side_effect=ValueError(
+                "Gemini API key is required"
+            ),
         ):
             result = runner.invoke(
                 main,
@@ -341,6 +392,44 @@ class TestErrorHandling:
             )
         assert result.exit_code == 1
         assert "ffmpeg not found" in result.output
+
+    def test_os_error_displays_message(
+        self, runner, source_dir, output_file
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=OSError("Permission denied"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "Permission denied" in result.output
+
+    def test_unexpected_error_propagates(
+        self, runner, source_dir, output_file
+    ):
+        """Unexpected exceptions are not swallowed."""
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=TypeError("unexpected"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic", "test",
+                    "--output", str(output_file),
+                ],
+            )
+        # TypeError is not caught, so Click reports it
+        assert result.exit_code != 0
+        assert result.exception is not None
 
 
 class TestResultSummary:
@@ -386,5 +475,6 @@ class TestHelpText:
         assert "--format" in result.output
         assert "--host-voice" in result.output
         assert "--expert-voice" in result.output
+        assert "--narrator-voice" in result.output
         assert "--llm" in result.output
         assert "--max-duration" in result.output

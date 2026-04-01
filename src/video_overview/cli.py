@@ -13,7 +13,10 @@ from video_overview.core import create_overview
 
 @click.command()
 @click.version_option(version=__version__, prog_name="video-overview")
-@click.argument("source_dir")
+@click.argument(
+    "source_dir",
+    type=click.Path(exists=True, file_okay=False),
+)
 @click.option(
     "--topic",
     "-t",
@@ -31,19 +34,27 @@ from video_overview.core import create_overview
     "-i",
     multiple=True,
     default=["*"],
-    help="Glob patterns for files to include. Can be specified multiple times.",
+    help=(
+        "Glob patterns for files to include. "
+        "Can be specified multiple times."
+    ),
 )
 @click.option(
     "--exclude",
     "-e",
     multiple=True,
     default=[],
-    help="Glob patterns for files to exclude. Can be specified multiple times.",
+    help=(
+        "Glob patterns for files to exclude. "
+        "Can be specified multiple times."
+    ),
 )
 @click.option(
     "--mode",
     "-m",
-    type=click.Choice(["conversation", "narration"], case_sensitive=False),
+    type=click.Choice(
+        ["conversation", "narration"], case_sensitive=False
+    ),
     default="conversation",
     help="Script mode: conversation or narration.",
 )
@@ -58,12 +69,17 @@ from video_overview.core import create_overview
 @click.option(
     "--host-voice",
     default="Aoede",
-    help="Voice for the host speaker.",
+    help="Voice for the host speaker (conversation mode).",
 )
 @click.option(
     "--expert-voice",
     default="Charon",
-    help="Voice for the expert speaker.",
+    help="Voice for the expert speaker (conversation mode).",
+)
+@click.option(
+    "--narrator-voice",
+    default="Kore",
+    help="Voice for the narrator (narration mode).",
 )
 @click.option(
     "--llm",
@@ -73,7 +89,7 @@ from video_overview.core import create_overview
 )
 @click.option(
     "--max-duration",
-    type=int,
+    type=click.IntRange(min=1),
     default=10,
     help="Maximum duration in minutes.",
 )
@@ -87,6 +103,7 @@ def main(
     output_format: str,
     host_voice: str,
     expert_voice: str,
+    narrator_voice: str,
     llm: str,
     max_duration: int,
 ) -> None:
@@ -102,18 +119,20 @@ def main(
             format=output_format,
             host_voice=host_voice,
             expert_voice=expert_voice,
+            narrator_voice=narrator_voice,
             llm_backend=llm,
             max_duration_minutes=max_duration,
         )
         result = create_overview(config=config)
         click.echo(
             f"Overview created: {result.output_path} "
-            f"({result.duration_seconds}s, {result.segments_count} segments)"
+            f"({result.duration_seconds}s, "
+            f"{result.segments_count} segments)"
         )
     except KeyboardInterrupt:
         click.echo("Interrupted")
         sys.exit(130)
-    except Exception as exc:
+    except (ValueError, RuntimeError, OSError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
