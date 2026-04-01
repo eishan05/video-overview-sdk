@@ -1,0 +1,758 @@
+"""Tests for the core orchestrator (create_overview)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from video_overview.config import (
+    OverviewConfig,
+    OverviewResult,
+    Script,
+    ScriptSegment,
+)
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_script(n_segments: int = 3) -> Script:
+    """Create a simple Script with the given number of segments."""
+    segments = [
+        ScriptSegment(
+            speaker="Host" if i % 2 == 0 else "Expert",
+            text=f"Segment {i} text content here.",
+            visual_prompt=f"Visual prompt for segment {i}",
+        )
+        for i in range(n_segments)
+    ]
+    return Script(title="Test Overview", segments=segments)
+
+
+def _make_config(tmp_path: Path, **overrides) -> OverviewConfig:
+    """Create a minimal valid OverviewConfig."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir(exist_ok=True)
+    output = tmp_path / "output.mp4"
+    defaults = dict(
+        source_dir=source_dir,
+        output=output,
+        topic="Test Topic",
+    )
+    defaults.update(overrides)
+    return OverviewConfig(**defaults)
+
+
+@pytest.fixture()
+def tmp_source(tmp_path):
+    """Create a temporary source directory and output path."""
+    source = tmp_path / "source"
+    source.mkdir()
+    return tmp_path
+
+
+@pytest.fixture()
+def mock_content_reader():
+    reader = MagicMock()
+    reader.read.return_value = {
+        "directory_structure": "src/\n  main.py\n",
+        "files": [
+            {
+                "path": "main.py",
+                "content": "print('hello')",
+                "language": "python",
+            }
+        ],
+        "total_files": 1,
+        "total_chars": 14,
+    }
+    return reader
+
+
+@pytest.fixture()
+def mock_script_generator():
+    gen = MagicMock()
+    gen.generate.return_value = _make_script()
+    return gen
+
+
+@pytest.fixture()
+def mock_audio_generator_cls():
+    """Return a class-like callable that produces a mock AudioGenerator."""
+    instance = MagicMock()
+    instance.generate.return_value = (
+        Path("/tmp/cache/output.wav"),
+        [2.0, 3.0, 2.5],
+    )
+    cls = MagicMock(return_value=instance)
+    return cls, instance
+
+
+@pytest.fixture()
+def mock_visual_generator_cls():
+    """Return a class-like callable that produces a mock VisualGenerator."""
+    instance = MagicMock()
+    # VisualGenerator.generate is async
+    instance.generate = AsyncMock(
+        return_value=[
+            Path("/tmp/cache/visuals/img0.png"),
+            Path("/tmp/cache/visuals/img1.png"),
+            Path("/tmp/cache/visuals/img2.png"),
+        ]
+    )
+    cls = MagicMock(return_value=instance)
+    return cls, instance
+
+
+@pytest.fixture()
+def mock_video_assembler_cls():
+    """Return a class-like callable that produces a mock VideoAssembler."""
+    instance = MagicMock()
+    instance.assemble.return_value = Path("/tmp/output.mp4")
+    cls = MagicMock(return_value=instance)
+    return cls, instance
+
+
+@pytest.fixture()
+def all_mocks(
+    mock_content_reader,
+    mock_script_generator,
+    mock_audio_generator_cls,
+    mock_visual_generator_cls,
+    mock_video_assembler_cls,
+):
+    """Patch all sub-components and return their mocks."""
+    audio_cls, audio_inst = mock_audio_generator_cls
+    visual_cls, visual_inst = mock_visual_generator_cls
+    assembler_cls, assembler_inst = mock_video_assembler_cls
+
+    with (
+        patch("video_overview.core.ContentReader", return_value=mock_content_reader),
+        patch(
+            "video_overview.core.ScriptGenerator",
+            return_value=mock_script_generator,
+        ),
+        patch("video_overview.core.AudioGenerator", audio_cls),
+        patch("video_overview.core.VisualGenerator", visual_cls),
+        patch("video_overview.core.VideoAssembler", assembler_cls),
+        patch.dict("os.environ", {"GEMINI_API_KEY": "test-key-123"}),
+    ):
+        yield {
+            "content_reader": mock_content_reader,
+            "script_generator": mock_script_generator,
+            "audio_cls": audio_cls,
+            "audio_inst": audio_inst,
+            "visual_cls": visual_cls,
+            "visual_inst": visual_inst,
+            "assembler_cls": assembler_cls,
+            "assembler_inst": assembler_inst,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Tests: Full pipeline (video mode)
+# ---------------------------------------------------------------------------
+
+
+class TestFullPipelineVideoMode:
+    """End-to-end pipeline in video mode with all mocks."""
+
+    def test_returns_overview_result(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        result = create_overview(config=config)
+
+        assert isinstance(result, OverviewResult)
+
+    def test_calls_content_reader(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        reader = all_mocks["content_reader"]
+        reader.read.assert_called_once_with(
+            source_dir=config.source_dir,
+            include=config.include,
+            exclude=config.exclude,
+        )
+
+    def test_calls_script_generator(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        gen = all_mocks["script_generator"]
+        gen.generate.assert_called_once()
+        call_kwargs = gen.generate.call_args
+        assert call_kwargs.kwargs["topic"] == "Test Topic"
+        assert call_kwargs.kwargs["mode"] == "conversation"
+
+    def test_calls_audio_generator(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        all_mocks["audio_cls"].assert_called_once()
+        all_mocks["audio_inst"].generate.assert_called_once()
+
+    def test_calls_visual_generator(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        all_mocks["visual_cls"].assert_called_once()
+        all_mocks["visual_inst"].generate.assert_called_once()
+
+    def test_calls_video_assembler(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        all_mocks["assembler_cls"].assert_called_once()
+        all_mocks["assembler_inst"].assemble.assert_called_once()
+
+    def test_pipeline_order(self, tmp_source, all_mocks):
+        """Verify the pipeline runs in correct order:
+        read -> script -> audio+visuals -> assemble."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        call_order = []
+
+        reader = all_mocks["content_reader"]
+
+        def track_read(*a, **kw):
+            call_order.append("read")
+            return {
+                "directory_structure": "src/\n",
+                "files": [],
+                "total_files": 0,
+                "total_chars": 0,
+            }
+
+        reader.read.side_effect = track_read
+
+        gen = all_mocks["script_generator"]
+
+        def track_generate(*a, **kw):
+            call_order.append("script")
+            return _make_script()
+
+        gen.generate.side_effect = track_generate
+
+        audio_inst = all_mocks["audio_inst"]
+
+        def track_audio(*a, **kw):
+            call_order.append("audio")
+            return (Path("/tmp/cache/output.wav"), [2.0, 3.0, 2.5])
+
+        audio_inst.generate.side_effect = track_audio
+
+        visual_inst = all_mocks["visual_inst"]
+
+        async def track_visual(*a, **kw):
+            call_order.append("visual")
+            return [Path("/tmp/cache/visuals/img0.png")] * 3
+
+        visual_inst.generate = AsyncMock(side_effect=track_visual)
+
+        assembler_inst = all_mocks["assembler_inst"]
+
+        def track_assemble(*a, **kw):
+            call_order.append("assemble")
+            return Path("/tmp/output.mp4")
+
+        assembler_inst.assemble.side_effect = track_assemble
+
+        create_overview(config=config)
+
+        # read and script must come before audio/visual
+        assert call_order.index("read") < call_order.index("audio")
+        assert call_order.index("script") < call_order.index("audio")
+        assert call_order.index("script") < call_order.index("visual")
+        # assemble must come last
+        assert call_order.index("assemble") > call_order.index("audio")
+        assert call_order.index("assemble") > call_order.index("visual")
+
+
+# ---------------------------------------------------------------------------
+# Tests: Full pipeline (audio mode)
+# ---------------------------------------------------------------------------
+
+
+class TestFullPipelineAudioMode:
+    """Audio-only mode skips visuals and video assembly."""
+
+    def test_skips_visual_generation(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["visual_inst"].generate.assert_not_called()
+
+    def test_assembles_as_audio_not_video(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        call_kwargs = (
+            all_mocks["assembler_inst"].assemble.call_args
+        )
+        assert call_kwargs.kwargs["format"] == "audio"
+
+    def test_still_calls_content_reader(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["content_reader"].read.assert_called_once()
+
+    def test_still_calls_script_generator(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["script_generator"].generate.assert_called_once()
+
+    def test_still_calls_audio_generator(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["audio_inst"].generate.assert_called_once()
+
+    def test_returns_overview_result(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        result = create_overview(config=config)
+
+        assert isinstance(result, OverviewResult)
+
+    def test_wav_output_skips_assembler(
+        self, tmp_source, all_mocks
+    ):
+        """WAV audio output uses shutil.copy2, not VideoAssembler."""
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.wav"
+        config = _make_config(tmp_source, format="audio", output=out)
+        with patch("video_overview.core.shutil.copy2"):
+            create_overview(config=config)
+
+        # Assembler should NOT be instantiated for WAV output
+        all_mocks["assembler_cls"].assert_not_called()
+
+    def test_mp3_output_uses_assembler(
+        self, tmp_source, all_mocks
+    ):
+        """Non-WAV audio output routes through VideoAssembler."""
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["assembler_cls"].assert_called_once()
+
+    def test_wav_output_same_path_no_error(
+        self, tmp_source, all_mocks
+    ):
+        """When output path equals the cache WAV path, no
+        SameFileError should occur."""
+        from video_overview.core import create_overview
+
+        cache_dir = tmp_source / "source" / ".video_overview_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_wav = cache_dir / "output.wav"
+        # AudioGenerator returns the cache wav path
+        all_mocks["audio_inst"].generate.return_value = (
+            cache_wav,
+            [2.0, 3.0],
+        )
+        config = _make_config(
+            tmp_source, format="audio", output=cache_wav
+        )
+        # Should not raise SameFileError
+        result = create_overview(config=config)
+        assert result.output_path == cache_wav
+
+
+# ---------------------------------------------------------------------------
+# Tests: Config creation
+# ---------------------------------------------------------------------------
+
+
+class TestConfigCreation:
+    """create_overview accepts both OverviewConfig and keyword args."""
+
+    def test_accepts_config_object(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source)
+        result = create_overview(config=config)
+        assert isinstance(result, OverviewResult)
+
+    def test_accepts_keyword_arguments(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        source_dir = tmp_source / "source"
+        result = create_overview(
+            source_dir=source_dir,
+            output=tmp_source / "output.mp4",
+            topic="Keyword Topic",
+        )
+        assert isinstance(result, OverviewResult)
+
+    def test_kwargs_passed_to_config(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        source_dir = tmp_source / "source"
+        create_overview(
+            source_dir=source_dir,
+            output=tmp_source / "output.mp4",
+            topic="Keyword Topic",
+            mode="narration",
+        )
+        gen = all_mocks["script_generator"]
+        call_kwargs = gen.generate.call_args.kwargs
+        assert call_kwargs["mode"] == "narration"
+
+    def test_config_takes_precedence_over_kwargs(self, tmp_source, all_mocks):
+        """If both config and kwargs are given, config wins."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, topic="Config Topic")
+        result = create_overview(config=config, topic="Kwargs Topic")
+        assert isinstance(result, OverviewResult)
+        # The script generator should get the config's topic
+        gen = all_mocks["script_generator"]
+        call_kwargs = gen.generate.call_args.kwargs
+        assert call_kwargs["topic"] == "Config Topic"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Progress output
+# ---------------------------------------------------------------------------
+
+
+class TestProgressMessages:
+    """Progress is printed to stderr at each stage."""
+
+    def test_progress_to_stderr(self, tmp_source, all_mocks, capsys):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        captured = capsys.readouterr()
+        stderr = captured.err
+
+        stderr_lower = stderr.lower()
+        assert "reading content" in stderr_lower
+        assert "generating script" in stderr_lower
+        assert "generating audio" in stderr_lower
+        assert "visuals" in stderr_lower or "visual" in stderr_lower
+        assert "assembling" in stderr_lower
+
+    def test_audio_mode_no_visual_progress(self, tmp_source, all_mocks, capsys):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        captured = capsys.readouterr()
+        stderr = captured.err
+
+        # Audio mode should not mention visuals or assembling video
+        assert "generating visuals" not in stderr.lower()
+        assert "assembling video" not in stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests: API key validation
+# ---------------------------------------------------------------------------
+
+
+class TestAPIKeyValidation:
+    """Missing API key produces a clear error."""
+
+    def test_missing_gemini_api_key(self, tmp_source):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source)
+
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError, match="(?i)api.key"):
+                create_overview(config=config)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Error propagation
+# ---------------------------------------------------------------------------
+
+
+class TestContentReaderError:
+    def test_content_reader_error_propagation(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.side_effect = FileNotFoundError("not found")
+        config = _make_config(tmp_source)
+
+        with pytest.raises(FileNotFoundError, match="not found"):
+            create_overview(config=config)
+
+
+class TestScriptGeneratorError:
+    def test_script_generator_error_propagation(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+        from video_overview.script.generator import ScriptGenerationError
+
+        all_mocks["script_generator"].generate.side_effect = (
+            ScriptGenerationError("LLM failed")
+        )
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ScriptGenerationError, match="LLM failed"):
+            create_overview(config=config)
+
+
+class TestAudioGeneratorError:
+    def test_audio_generator_error_propagation(self, tmp_source, all_mocks):
+        from video_overview.audio.generator import AudioGenerationError
+        from video_overview.core import create_overview
+
+        all_mocks["audio_inst"].generate.side_effect = (
+            AudioGenerationError("TTS failed")
+        )
+        config = _make_config(tmp_source)
+
+        with pytest.raises(AudioGenerationError, match="TTS failed"):
+            create_overview(config=config)
+
+
+class TestVisualGeneratorError:
+    def test_visual_generator_error_propagation(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+        from video_overview.visuals.generator import VisualGenerationError
+
+        all_mocks["visual_inst"].generate = AsyncMock(
+            side_effect=VisualGenerationError("Image gen failed")
+        )
+        config = _make_config(tmp_source, format="video")
+
+        with pytest.raises(VisualGenerationError, match="Image gen failed"):
+            create_overview(config=config)
+
+
+class TestVideoAssemblerError:
+    def test_video_assembler_error_propagation(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+        from video_overview.video.assembler import VideoAssemblyError
+
+        all_mocks["assembler_inst"].assemble.side_effect = (
+            VideoAssemblyError("ffmpeg broken")
+        )
+        config = _make_config(tmp_source, format="video")
+
+        with pytest.raises(VideoAssemblyError, match="ffmpeg broken"):
+            create_overview(config=config)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Concurrent audio + visual generation
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentGeneration:
+    """Audio and visual generation run concurrently via asyncio."""
+
+    def test_audio_and_visual_both_execute(
+        self, tmp_source, all_mocks
+    ):
+        """Verify both audio and visual generation are invoked."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        all_mocks["audio_inst"].generate.assert_called_once()
+        all_mocks["visual_inst"].generate.assert_called_once()
+
+    def test_uses_asyncio_for_concurrency(
+        self, tmp_source, all_mocks
+    ):
+        """Verify the orchestrator dispatches audio and visuals
+        through the async helper, which uses asyncio.gather for
+        concurrent execution."""
+        import threading
+
+        from video_overview.core import create_overview
+
+        audio_thread_id = None
+        visual_thread_id = None
+
+        def audio_generate(*a, **kw):
+            nonlocal audio_thread_id
+            audio_thread_id = threading.current_thread().ident
+            return (
+                Path("/tmp/cache/output.wav"),
+                [2.0, 3.0, 2.5],
+            )
+
+        all_mocks["audio_inst"].generate.side_effect = (
+            audio_generate
+        )
+
+        async def visual_generate(*a, **kw):
+            nonlocal visual_thread_id
+            visual_thread_id = threading.current_thread().ident
+            return [Path("/tmp/cache/visuals/img0.png")] * 3
+
+        all_mocks["visual_inst"].generate = AsyncMock(
+            side_effect=visual_generate
+        )
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        # Both must have executed
+        assert audio_thread_id is not None
+        assert visual_thread_id is not None
+        # Audio runs in executor (different thread), visual runs
+        # in the event loop thread -- they should differ, proving
+        # concurrent dispatch via asyncio
+        assert audio_thread_id != visual_thread_id
+
+
+class TestRunAsyncFallback:
+    """_run_async falls back to a thread when already in a loop."""
+
+    @pytest.mark.asyncio
+    async def test_run_async_inside_event_loop(self):
+        """Calling _run_async from inside a running event loop
+        should succeed by spawning a new thread."""
+        from video_overview.core import _run_async
+
+        async def dummy():
+            return 42
+
+        # We are inside the pytest-asyncio event loop here
+        result = _run_async(dummy())
+        assert result == 42
+
+
+# ---------------------------------------------------------------------------
+# Tests: OverviewResult populated correctly
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewResultPopulation:
+    def test_result_has_output_path(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        all_mocks["assembler_inst"].assemble.return_value = config.output
+        result = create_overview(config=config)
+
+        assert result.output_path == config.output
+
+    def test_result_has_duration_seconds(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        # Durations: [2.0, 3.0, 2.5] => sum = 7.5
+        result = create_overview(config=config)
+
+        assert result.duration_seconds == pytest.approx(7.5)
+
+    def test_result_has_segments_count(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        result = create_overview(config=config)
+
+        assert result.segments_count == 3
+
+    def test_audio_mode_result(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        audio_path = Path("/tmp/cache/output.wav")
+        all_mocks["audio_inst"].generate.return_value = (
+            audio_path,
+            [1.0, 2.0, 3.0],
+        )
+
+        out = tmp_source / "output.mp3"
+        # Assembler returns the final output path
+        all_mocks["assembler_inst"].assemble.return_value = out
+        config = _make_config(tmp_source, format="audio", output=out)
+        result = create_overview(config=config)
+
+        assert result.output_path == out
+        assert result.duration_seconds == pytest.approx(6.0)
+        assert result.segments_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: Cache directory creation
+# ---------------------------------------------------------------------------
+
+
+class TestCacheDirectory:
+    def test_cache_dir_created(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        assert config.cache_dir.exists()
+        assert config.cache_dir.is_dir()
+
+    def test_explicit_cache_dir(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        custom_cache = tmp_source / "my_cache"
+        config = _make_config(tmp_source, cache_dir=custom_cache, format="video")
+        create_overview(config=config)
+
+        assert custom_cache.exists()
+        assert custom_cache.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Tests: __init__.py exports
+# ---------------------------------------------------------------------------
+
+
+class TestExports:
+    def test_create_overview_exported(self):
+        from video_overview import create_overview
+
+        assert callable(create_overview)
+
+    def test_overview_config_exported(self):
+        from video_overview import OverviewConfig
+
+        assert OverviewConfig is not None
