@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pathspec
 
@@ -120,6 +120,27 @@ def _is_binary(content_bytes: bytes) -> bool:
     return b"\x00" in content_bytes[:8192]
 
 
+def _matches_any(rel_path: str, patterns: list[str]) -> bool:
+    """Check if a POSIX relative path matches any of the given patterns.
+
+    For patterns containing a ``/`` (path-based), uses
+    ``PurePosixPath.match()`` which is path-segment aware.  For
+    basename-only patterns (e.g. ``*.py``), uses ``fnmatch`` against
+    the filename component.
+    """
+    posix = PurePosixPath(rel_path)
+    for pat in patterns:
+        if "/" in pat:
+            # Path-based pattern — segment-aware matching
+            if posix.match(pat):
+                return True
+        else:
+            # Basename-only pattern
+            if fnmatch.fnmatch(posix.name, pat):
+                return True
+    return False
+
+
 def _file_sort_key(rel_path: str) -> tuple[int, str]:
     """Return a sort key that puts README first, docs second, source last.
 
@@ -221,7 +242,11 @@ class ContentReader:
                 continue
 
             # Skip files inside always-skipped directories
-            if any(part in _SKIP_DIRS for part in path.relative_to(source_dir).parts):
+            rel_parts = path.relative_to(source_dir).parts
+            if any(
+                part in _SKIP_DIRS or part.endswith(".egg-info")
+                for part in rel_parts
+            ):
                 continue
 
             # Skip files with known binary extensions
@@ -234,24 +259,14 @@ class ContentReader:
             if gitignore_spec and gitignore_spec.match_file(rel_path_str):
                 continue
 
-            # Apply include filter — match against both basename and
-            # relative path so that patterns like "src/*.py" work.
-            if include:
-                if not any(
-                    fnmatch.fnmatch(path.name, pat)
-                    or fnmatch.fnmatch(rel_path_str, pat)
-                    for pat in include
-                ):
-                    continue
+            # Apply include filter — use path-aware matching so that
+            # patterns like "src/*.py" respect directory segments.
+            if include and not _matches_any(rel_path_str, include):
+                continue
 
             # Apply exclude filter
-            if exclude:
-                if any(
-                    fnmatch.fnmatch(rel_path_str, pat)
-                    or fnmatch.fnmatch(path.name, pat)
-                    for pat in exclude
-                ):
-                    continue
+            if exclude and _matches_any(rel_path_str, exclude):
+                continue
 
             candidates.append(path)
 
@@ -305,14 +320,19 @@ class ContentReader:
                 kept.append(entry)
                 budget -= content_len
             else:
-                # Truncate this last file to fit within budget,
-                # reserving space for the suffix.
-                suffix_len = len(_BUDGET_SUFFIX)
-                available = budget - suffix_len
-                if available > 0:
-                    entry["content"] = (
-                        entry["content"][:available] + _BUDGET_SUFFIX
-                    )
+                # Truncate this last file to fit within budget.
+                if budget > 0:
+                    suffix_len = len(_BUDGET_SUFFIX)
+                    available = budget - suffix_len
+                    if available > 0:
+                        # Room for content + suffix
+                        entry["content"] = (
+                            entry["content"][:available]
+                            + _BUDGET_SUFFIX
+                        )
+                    else:
+                        # Very small budget — include raw prefix only
+                        entry["content"] = entry["content"][:budget]
                     kept.append(entry)
                 break
 

@@ -104,6 +104,18 @@ class TestIncludeFilter:
             assert f["path"].startswith("src/")
             assert f["path"].endswith(".py")
 
+    def test_include_path_pattern_excludes_nested(self, reader, sample_dir):
+        """'src/*.py' should NOT match 'src/sub/helper.py'."""
+        result = reader.read(sample_dir, include=["src/*.py"])
+        paths = [f["path"] for f in result["files"]]
+        assert "src/sub/helper.py" not in paths
+
+    def test_include_recursive_glob(self, reader, sample_dir):
+        """'src/**/*.py' should match nested files."""
+        result = reader.read(sample_dir, include=["src/**/*.py"])
+        paths = [f["path"] for f in result["files"]]
+        assert "src/sub/helper.py" in paths
+
 
 class TestExcludeFilter:
     """Test exclude pattern filtering."""
@@ -184,6 +196,18 @@ class TestBinaryFileSkipping:
         paths = [f["path"] for f in result["files"]]
         assert not any(".pyc" in p for p in paths)
 
+    def test_skips_egg_info_directories(self, reader, tmp_path):
+        """Directories like 'package.egg-info' should be skipped."""
+        egg = tmp_path / "video_overview.egg-info"
+        egg.mkdir()
+        (egg / "PKG-INFO").write_text("Metadata-Version: 2.1")
+        (tmp_path / "main.py").write_text("x = 1")
+
+        result = reader.read(tmp_path)
+        paths = [f["path"] for f in result["files"]]
+        assert not any("egg-info" in p for p in paths)
+        assert any("main.py" in p for p in paths)
+
 
 class TestLargeFileTruncation:
     """Test that large files are truncated."""
@@ -232,6 +256,14 @@ class TestMaxCharsBudget:
         (tmp_path / "a.py").write_text("x" * 500)
         result = reader.read(tmp_path, max_chars=100)
         assert result["total_chars"] <= 100
+
+    def test_very_small_budget_includes_content(self, reader, tmp_path):
+        """Even a tiny budget should include some content."""
+        (tmp_path / "a.py").write_text("x" * 500)
+        result = reader.read(tmp_path, max_chars=10)
+        assert result["total_chars"] <= 10
+        assert result["total_files"] == 1
+        assert len(result["files"][0]["content"]) == 10
 
     def test_includes_files_within_budget(self, reader, tmp_path):
         (tmp_path / "a.py").write_text("small")
