@@ -1,7 +1,5 @@
 """Tests for ContentReader class."""
 
-import os
-
 import pytest
 
 from video_overview.content.reader import ContentReader
@@ -98,6 +96,14 @@ class TestIncludeFilter:
                 ".yaml"
             ), f"Unexpected file: {f['path']}"
 
+    def test_include_path_based_pattern(self, reader, sample_dir):
+        """Path-based include patterns like 'src/*.py' should work."""
+        result = reader.read(sample_dir, include=["src/*.py"])
+        assert result["total_files"] >= 1
+        for f in result["files"]:
+            assert f["path"].startswith("src/")
+            assert f["path"].endswith(".py")
+
 
 class TestExcludeFilter:
     """Test exclude pattern filtering."""
@@ -113,7 +119,9 @@ class TestExcludeFilter:
         result = reader.read(sample_dir, exclude=["docs/*"])
         paths = [f["path"] for f in result["files"]]
         for p in paths:
-            assert "docs/" not in p or "docs" not in p.split(os.sep)
+            assert not p.startswith("docs/"), (
+                f"File inside docs/ should be excluded: {p}"
+            )
 
 
 class TestGitignoreRespect:
@@ -218,6 +226,12 @@ class TestMaxCharsBudget:
 
         result = reader.read(tmp_path, max_chars=5000)
         assert result["total_chars"] <= 5000
+
+    def test_respects_max_chars_with_small_budget(self, reader, tmp_path):
+        """Budget must hold even for very small values."""
+        (tmp_path / "a.py").write_text("x" * 500)
+        result = reader.read(tmp_path, max_chars=100)
+        assert result["total_chars"] <= 100
 
     def test_includes_files_within_budget(self, reader, tmp_path):
         (tmp_path / "a.py").write_text("small")
@@ -345,3 +359,33 @@ class TestNestedDirectoryWalking:
         path = result["files"][0]["path"]
         assert not path.startswith("/")
         assert path.startswith("src/") or path == "src/module.py"
+
+
+class TestSourceDirValidation:
+    """Test that invalid source_dir raises appropriate errors."""
+
+    def test_nonexistent_dir_raises(self, reader, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            reader.read(tmp_path / "nonexistent")
+
+    def test_file_as_source_dir_raises(self, reader, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("content")
+        with pytest.raises(NotADirectoryError):
+            reader.read(f)
+
+
+class TestDirectoryTreeFromFullCandidates:
+    """Tree should reflect all filtered files, not just budget-kept."""
+
+    def test_tree_includes_files_beyond_budget(self, reader, tmp_path):
+        (tmp_path / "a.py").write_text("x" * 100)
+        (tmp_path / "b.py").write_text("y" * 100)
+
+        # Budget only allows one file
+        result = reader.read(tmp_path, max_chars=120)
+        tree = result["directory_structure"]
+        # Both files should appear in the tree even if only one
+        # is included in the content bundle.
+        assert "a.py" in tree
+        assert "b.py" in tree

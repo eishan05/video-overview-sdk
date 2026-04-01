@@ -202,6 +202,15 @@ class ContentReader:
         """
         source_dir = Path(source_dir).resolve()
 
+        if not source_dir.exists():
+            raise FileNotFoundError(
+                f"source_dir does not exist: {source_dir}"
+            )
+        if not source_dir.is_dir():
+            raise NotADirectoryError(
+                f"source_dir is not a directory: {source_dir}"
+            )
+
         # Load .gitignore if present
         gitignore_spec = self._load_gitignore(source_dir)
 
@@ -219,16 +228,19 @@ class ContentReader:
             if path.suffix.lower() in _SKIP_EXTENSIONS:
                 continue
 
-            rel_path_str = str(path.relative_to(source_dir))
+            rel_path_str = path.relative_to(source_dir).as_posix()
 
             # Apply .gitignore
             if gitignore_spec and gitignore_spec.match_file(rel_path_str):
                 continue
 
-            # Apply include filter
+            # Apply include filter — match against both basename and
+            # relative path so that patterns like "src/*.py" work.
             if include:
                 if not any(
-                    fnmatch.fnmatch(path.name, pat) for pat in include
+                    fnmatch.fnmatch(path.name, pat)
+                    or fnmatch.fnmatch(rel_path_str, pat)
+                    for pat in include
                 ):
                     continue
 
@@ -259,7 +271,7 @@ class ContentReader:
             except UnicodeDecodeError:
                 continue
 
-            rel_path = str(path.relative_to(source_dir))
+            rel_path = path.relative_to(source_dir).as_posix()
             language = _detect_language(path)
 
             # Truncate large files
@@ -278,7 +290,13 @@ class ContentReader:
         # Sort files by relevance
         file_entries.sort(key=lambda f: _file_sort_key(f["path"]))
 
+        # Build directory structure tree from ALL candidates (before
+        # budget trimming) so the tree reflects the full repository.
+        all_rel_paths = [e["path"] for e in file_entries]
+        tree = _build_tree(source_dir, all_rel_paths)
+
         # Enforce max_chars budget
+        _BUDGET_SUFFIX = "\n\n... [truncated to fit budget]"
         budget = max_chars
         kept: list[dict] = []
         for entry in file_entries:
@@ -287,18 +305,16 @@ class ContentReader:
                 kept.append(entry)
                 budget -= content_len
             else:
-                # Truncate this last file to fit
-                if budget > 0:
+                # Truncate this last file to fit within budget,
+                # reserving space for the suffix.
+                suffix_len = len(_BUDGET_SUFFIX)
+                available = budget - suffix_len
+                if available > 0:
                     entry["content"] = (
-                        entry["content"][:budget]
-                        + "\n\n... [truncated to fit budget]"
+                        entry["content"][:available] + _BUDGET_SUFFIX
                     )
                     kept.append(entry)
                 break
-
-        # Build directory structure tree
-        all_rel_paths = [e["path"] for e in kept]
-        tree = _build_tree(source_dir, all_rel_paths)
 
         total_chars = sum(len(e["content"]) for e in kept)
 
