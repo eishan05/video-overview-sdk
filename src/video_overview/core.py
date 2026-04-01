@@ -187,7 +187,8 @@ def create_overview(
         _progress("Writing audio output...")
         if config.output.suffix.lower() == ".wav":
             # Simple copy -- no ffmpeg needed
-            shutil.copy2(audio_path, config.output)
+            if audio_path.resolve() != config.output.resolve():
+                shutil.copy2(audio_path, config.output)
             output_path = config.output
         else:
             # Needs format conversion (e.g. WAV -> MP3)

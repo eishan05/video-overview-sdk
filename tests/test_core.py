@@ -375,6 +375,28 @@ class TestFullPipelineAudioMode:
 
         all_mocks["assembler_cls"].assert_called_once()
 
+    def test_wav_output_same_path_no_error(
+        self, tmp_source, all_mocks
+    ):
+        """When output path equals the cache WAV path, no
+        SameFileError should occur."""
+        from video_overview.core import create_overview
+
+        cache_dir = tmp_source / "source" / ".video_overview_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_wav = cache_dir / "output.wav"
+        # AudioGenerator returns the cache wav path
+        all_mocks["audio_inst"].generate.return_value = (
+            cache_wav,
+            [2.0, 3.0],
+        )
+        config = _make_config(
+            tmp_source, format="audio", output=cache_wav
+        )
+        # Should not raise SameFileError
+        result = create_overview(config=config)
+        assert result.output_path == cache_wav
+
 
 # ---------------------------------------------------------------------------
 # Tests: Config creation
