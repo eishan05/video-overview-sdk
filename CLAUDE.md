@@ -14,8 +14,10 @@ slides, and assembles everything into an MP4 or MP3.
 
 - Python 3.11+
 - `ffmpeg` on PATH
-- `GEMINI_API_KEY` environment variable must be set
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY` environment variable must be set
 - Either `claude` (Claude Code CLI) or `codex` (Codex CLI) must be installed
+  and authenticated. The default backend is `claude`; pass `--llm codex` to
+  use Codex instead.
 
 ## Example Commands
 

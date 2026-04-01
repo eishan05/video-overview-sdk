@@ -1,6 +1,6 @@
 # Video Overview SDK
 
-Generate NotebookLM-style audio and video overviews of any codebase using AI.
+Generate NotebookLM-style audio and video overviews of a codebase using AI.
 
 The Video Overview SDK reads source code from a directory, generates an
 educational script with an LLM (Claude Code or Codex CLI), synthesises speech
@@ -14,7 +14,7 @@ file.
 |---|---|
 | **Python** | 3.11 or later |
 | **ffmpeg** | Must be on `PATH`. Used for audio concatenation, image fallback generation, and video assembly. |
-| **Claude Code** or **Codex CLI** | Used as the LLM backend for script generation. At least one must be installed. |
+| **Claude Code** or **Codex CLI** | Used as the LLM backend for script generation. At least one must be installed and authenticated. The default backend is Claude Code; pass `--llm codex` (CLI) or `llm_backend="codex"` (API) to use Codex instead. |
 | **Gemini API key** | Required for TTS audio and image generation. Set via `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). |
 
 ## Installation
