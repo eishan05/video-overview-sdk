@@ -491,6 +491,9 @@ class TestCaching:
         assert result[0] != result[1]
         # FFmpeg called twice (once per unique segment text)
         assert mock_run.call_count == 2
+        # API should only be called once; second segment skips the
+        # redundant call because the prompt is already marked as failed.
+        assert mock_client.models.generate_content.call_count == 1
 
 
 # ---------------------------------------------------------------------------

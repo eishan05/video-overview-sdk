@@ -71,6 +71,10 @@ class VisualGenerator:
         # the same visual_prompt, while still generating per-segment
         # fallback images (with segment-specific text) when the API fails.
         prompt_locks: dict[str, asyncio.Lock] = {}
+        # Track prompts that have already failed so subsequent segments
+        # with the same prompt skip the API call entirely.
+        failed_prompts: set[str] = set()
+
         for seg in script.segments:
             if seg.visual_prompt not in prompt_locks:
                 prompt_locks[seg.visual_prompt] = asyncio.Lock()
@@ -84,6 +88,7 @@ class VisualGenerator:
                     cache_dir=cache_dir,
                     semaphore=semaphore,
                     prompt_lock=prompt_locks[seg.visual_prompt],
+                    failed_prompts=failed_prompts,
                 )
             )
             for seg in script.segments
@@ -114,12 +119,16 @@ class VisualGenerator:
         cache_dir: Path,
         semaphore: asyncio.Semaphore,
         prompt_lock: asyncio.Lock,
+        failed_prompts: set[str],
     ) -> Path:
         """Generate a single image for a visual prompt.
 
         Checks cache first, then calls the API, with fallback to ffmpeg.
         The ``prompt_lock`` serialises tasks that share the same
         ``visual_prompt`` so only one makes the API call.
+        The ``failed_prompts`` set is shared across all tasks for the
+        current ``generate()`` invocation; once a prompt fails, subsequent
+        tasks skip the API call and go straight to fallback.
 
         Successful API images are cached by visual_prompt hash.
         Fallback images use a separate key that includes segment_text
@@ -140,37 +149,41 @@ class VisualGenerator:
             if cached_path.exists():
                 return cached_path
 
-            async with semaphore:
-                try:
-                    image_bytes = await self._call_api(
-                        client, visual_prompt
-                    )
-                    if image_bytes is not None:
-                        cached_path.write_bytes(image_bytes)
-                        return cached_path
-                    # No image in response -- fall through to fallback
-                    logger.warning(
-                        "No image in API response for prompt: %s",
-                        visual_prompt,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "API call failed for prompt %r: %s",
-                        visual_prompt,
-                        exc,
-                    )
+            # If this prompt already failed, skip API and go to fallback
+            if visual_prompt not in failed_prompts:
+                async with semaphore:
+                    try:
+                        image_bytes = await self._call_api(
+                            client, visual_prompt
+                        )
+                        if image_bytes is not None:
+                            cached_path.write_bytes(image_bytes)
+                            return cached_path
+                        # No image in response -- fall through to fallback
+                        logger.warning(
+                            "No image in API response for prompt: %s",
+                            visual_prompt,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "API call failed for prompt %r: %s",
+                            visual_prompt,
+                            exc,
+                        )
+                    # Mark this prompt as failed so subsequent tasks skip it
+                    failed_prompts.add(visual_prompt)
 
-                # Fallback: use segment_text in the cache key so each
-                # segment gets its own text slide even when prompts match.
-                fallback_key = hashlib.md5(
-                    f"{visual_prompt}::{segment_text}".encode()
-                ).hexdigest()
-                fallback_path = visuals_dir / f"{fallback_key}.png"
-                if not fallback_path.exists():
-                    self._create_fallback_image(
-                        segment_text, fallback_path
-                    )
-                return fallback_path
+            # Fallback: use segment_text in the cache key so each
+            # segment gets its own text slide even when prompts match.
+            fallback_key = hashlib.md5(
+                f"{visual_prompt}::{segment_text}".encode()
+            ).hexdigest()
+            fallback_path = visuals_dir / f"{fallback_key}.png"
+            if not fallback_path.exists():
+                self._create_fallback_image(
+                    segment_text, fallback_path
+                )
+            return fallback_path
 
     # ------------------------------------------------------------------
     # API call
