@@ -349,6 +349,32 @@ class TestFullPipelineAudioMode:
 
         assert isinstance(result, OverviewResult)
 
+    def test_wav_output_skips_assembler(
+        self, tmp_source, all_mocks
+    ):
+        """WAV audio output uses shutil.copy2, not VideoAssembler."""
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.wav"
+        config = _make_config(tmp_source, format="audio", output=out)
+        with patch("video_overview.core.shutil.copy2"):
+            create_overview(config=config)
+
+        # Assembler should NOT be instantiated for WAV output
+        all_mocks["assembler_cls"].assert_not_called()
+
+    def test_mp3_output_uses_assembler(
+        self, tmp_source, all_mocks
+    ):
+        """Non-WAV audio output routes through VideoAssembler."""
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out)
+        create_overview(config=config)
+
+        all_mocks["assembler_cls"].assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # Tests: Config creation
@@ -596,6 +622,23 @@ class TestConcurrentGeneration:
         # in the event loop thread -- they should differ, proving
         # concurrent dispatch via asyncio
         assert audio_thread_id != visual_thread_id
+
+
+class TestRunAsyncFallback:
+    """_run_async falls back to a thread when already in a loop."""
+
+    @pytest.mark.asyncio
+    async def test_run_async_inside_event_loop(self):
+        """Calling _run_async from inside a running event loop
+        should succeed by spawning a new thread."""
+        from video_overview.core import _run_async
+
+        async def dummy():
+            return 42
+
+        # We are inside the pytest-asyncio event loop here
+        result = _run_async(dummy())
+        assert result == 42
 
 
 # ---------------------------------------------------------------------------

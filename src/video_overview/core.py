@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sys
 from pathlib import Path
 
@@ -105,6 +106,11 @@ def create_overview(
         An ``OverviewResult`` with output path, duration, and
         segment count.
 
+    Note:
+        ``OverviewConfig.max_duration_minutes`` is accepted but not
+        yet enforced.  Duration capping will be added in a future
+        release.
+
     Raises:
         ValueError: If required API keys are missing.
         Various sub-component errors propagate unchanged.
@@ -179,14 +185,20 @@ def create_overview(
 
         # Convert/copy to the user-specified output path
         _progress("Writing audio output...")
-        assembler = VideoAssembler()
-        output_path = assembler.assemble(
-            audio_path=audio_path,
-            image_paths=[],
-            segment_durations=segment_durations,
-            output_path=config.output,
-            format="audio",
-        )
+        if config.output.suffix.lower() == ".wav":
+            # Simple copy -- no ffmpeg needed
+            shutil.copy2(audio_path, config.output)
+            output_path = config.output
+        else:
+            # Needs format conversion (e.g. WAV -> MP3)
+            assembler = VideoAssembler()
+            output_path = assembler.assemble(
+                audio_path=audio_path,
+                image_paths=[],
+                segment_durations=segment_durations,
+                output_path=config.output,
+                format="audio",
+            )
 
     # ---- 7. Build and return result ----
     _progress("Done.")
