@@ -35,5 +35,8 @@ overnight-batch-*
 overnight-coder-state-*
 overnight-coder-parallel-*.json
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store

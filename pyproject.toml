@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "video-overview"
+version = "0.1.0"
+description = "SDK for generating video overviews with AI"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Video Overview Team" },
+]
+dependencies = [
+    "google-genai>=1.0.0",
+    "click>=8.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "ruff",
+]
+
+[project.scripts]
+video-overview = "video_overview.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/video_overview"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

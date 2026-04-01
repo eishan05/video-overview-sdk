@@ -1,0 +1,1 @@
+"""Visual asset generation subpackage."""
