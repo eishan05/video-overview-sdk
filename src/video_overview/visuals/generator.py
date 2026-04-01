@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from video_overview.config import Script
 _MODEL = "gemini-2.0-flash-exp"
 _MAX_CONCURRENT = 3
 
+logger = logging.getLogger(__name__)
+
 
 class VisualGenerationError(Exception):
     """Raised when visual generation fails."""
@@ -23,12 +26,15 @@ class VisualGenerationError(Exception):
 class VisualGenerator:
     """Generates visual assets from a Script model using Gemini image generation."""
 
-    def __init__(self, api_key: str | None) -> None:
+    def __init__(
+        self, api_key: str | None, *, model: str = _MODEL
+    ) -> None:
         if not api_key:
             raise VisualGenerationError(
                 "API key is required. Set GEMINI_API_KEY environment variable."
             )
         self._api_key = api_key
+        self._model = model
 
     # ------------------------------------------------------------------
     # Public API
@@ -61,37 +67,40 @@ class VisualGenerator:
         client = genai.Client(api_key=self._api_key)
         semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
 
-        # Build tasks: deduplicate by visual_prompt to avoid redundant API calls.
-        # We track a dict of prompt -> future so duplicate prompts share a result.
-        prompt_tasks: dict[str, asyncio.Task[Path]] = {}
-        segment_tasks: list[asyncio.Task[Path]] = []
-
+        # Per-prompt locks prevent duplicate concurrent API calls for
+        # the same visual_prompt, while still generating per-segment
+        # fallback images (with segment-specific text) when the API fails.
+        prompt_locks: dict[str, asyncio.Lock] = {}
         for seg in script.segments:
-            prompt = seg.visual_prompt
-            if prompt not in prompt_tasks:
-                task = asyncio.create_task(
-                    self._generate_single(
-                        client=client,
-                        visual_prompt=prompt,
-                        segment_text=seg.text,
-                        cache_dir=cache_dir,
-                        semaphore=semaphore,
-                    )
+            if seg.visual_prompt not in prompt_locks:
+                prompt_locks[seg.visual_prompt] = asyncio.Lock()
+
+        tasks = [
+            asyncio.create_task(
+                self._generate_single(
+                    client=client,
+                    visual_prompt=seg.visual_prompt,
+                    segment_text=seg.text,
+                    cache_dir=cache_dir,
+                    semaphore=semaphore,
+                    prompt_lock=prompt_locks[seg.visual_prompt],
                 )
-                prompt_tasks[prompt] = task
-            segment_tasks.append(prompt_tasks[prompt])
+            )
+            for seg in script.segments
+        ]
 
-        # Await all unique tasks
-        unique_tasks = list(prompt_tasks.values())
-        await asyncio.gather(*unique_tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Collect results ordered by segment
-        results: list[Path] = []
-        for task in segment_tasks:
-            result = task.result()
-            results.append(result)
+        # Unwrap results; raise on unexpected failures.
+        paths: list[Path] = []
+        for i, result in enumerate(results):
+            if isinstance(result, BaseException):
+                raise VisualGenerationError(
+                    f"Visual generation failed for segment {i}: {result}"
+                ) from result
+            paths.append(result)
 
-        return results
+        return paths
 
     # ------------------------------------------------------------------
     # Single image generation
@@ -104,35 +113,54 @@ class VisualGenerator:
         segment_text: str,
         cache_dir: Path,
         semaphore: asyncio.Semaphore,
+        prompt_lock: asyncio.Lock,
     ) -> Path:
         """Generate a single image for a visual prompt.
 
         Checks cache first, then calls the API, with fallback to ffmpeg.
+        The ``prompt_lock`` serialises tasks that share the same
+        ``visual_prompt`` so only one makes the API call.
         """
         visuals_dir = cache_dir / "visuals"
         cache_hash = hashlib.md5(visual_prompt.encode()).hexdigest()
         cached_path = visuals_dir / f"{cache_hash}.png"
 
-        # Check cache
+        # Check cache before acquiring any locks (fast path)
         if cached_path.exists():
             return cached_path
 
-        async with semaphore:
-            try:
-                image_bytes = await self._call_api(
-                    client, visual_prompt
-                )
-                if image_bytes is not None:
-                    cached_path.write_bytes(image_bytes)
-                    return cached_path
-            except Exception:
-                pass
+        # Serialise per-prompt so duplicate prompts don't race
+        async with prompt_lock:
+            # Re-check after acquiring lock (another task may have
+            # written the cache while we waited).
+            if cached_path.exists():
+                return cached_path
 
-            # Fallback: create text slide with ffmpeg
-            self._create_fallback_image(
-                segment_text, cached_path
-            )
-            return cached_path
+            async with semaphore:
+                try:
+                    image_bytes = await self._call_api(
+                        client, visual_prompt
+                    )
+                    if image_bytes is not None:
+                        cached_path.write_bytes(image_bytes)
+                        return cached_path
+                    # No image in response -- fall through to fallback
+                    logger.warning(
+                        "No image in API response for prompt: %s",
+                        visual_prompt,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "API call failed for prompt %r: %s",
+                        visual_prompt,
+                        exc,
+                    )
+
+                # Fallback: create text slide with ffmpeg
+                self._create_fallback_image(
+                    segment_text, cached_path
+                )
+                return cached_path
 
     # ------------------------------------------------------------------
     # API call
@@ -154,11 +182,14 @@ class VisualGenerator:
 
         config = types.GenerateContentConfig(
             response_modalities=["IMAGE", "TEXT"],
+            image_config=types.ImageConfig(
+                aspect_ratio="16:9",
+            ),
         )
 
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model=_MODEL,
+            model=self._model,
             contents=prompt,
             config=config,
         )
@@ -187,7 +218,11 @@ class VisualGenerator:
 
     @staticmethod
     def _create_fallback_image(text: str, output_path: Path) -> None:
-        """Create a fallback image using ffmpeg with text on dark background."""
+        """Create a fallback image using ffmpeg with text on dark background.
+
+        Raises:
+            VisualGenerationError: If ffmpeg is unavailable or fails.
+        """
         # Escape special characters for ffmpeg drawtext filter
         escaped_text = text
         for char in ("\\", "'", '"', ":", "%"):
@@ -217,11 +252,20 @@ class VisualGenerator:
                 text=True,
                 timeout=30,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            # If ffmpeg also fails, create a minimal placeholder
-            output_path.write_bytes(b"")
-            return
+        except FileNotFoundError as exc:
+            raise VisualGenerationError(
+                "ffmpeg is not installed or not on PATH"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise VisualGenerationError(
+                "ffmpeg fallback timed out"
+            ) from exc
+        except OSError as exc:
+            raise VisualGenerationError(
+                f"ffmpeg execution error: {exc}"
+            ) from exc
 
         if result.returncode != 0:
-            # Write empty file as last resort
-            output_path.write_bytes(b"")
+            raise VisualGenerationError(
+                f"ffmpeg fallback failed: {result.stderr}"
+            )

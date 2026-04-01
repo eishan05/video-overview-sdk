@@ -595,10 +595,10 @@ class TestFallbackOnFailure:
 
 
 class TestModelConfiguration:
-    def test_uses_image_capable_model(
+    def test_uses_default_model(
         self, generator, tmp_path, mocker
     ):
-        """Should use an image-capable model like gemini-2.0-flash-exp."""
+        """Should default to gemini-2.0-flash-exp."""
         script = _make_script([
             ("Host", "Hello.", "A diagram"),
         ])
@@ -615,7 +615,103 @@ class TestModelConfiguration:
 
         call_kwargs = mock_client.models.generate_content.call_args
         model = call_kwargs.kwargs["model"]
-        assert "gemini" in model
+        assert model == "gemini-2.0-flash-exp"
+
+    def test_custom_model(self, api_key, tmp_path, mocker):
+        """Should use a custom model when specified."""
+        gen = VisualGenerator(api_key=api_key, model="gemini-custom")
+        script = _make_script([
+            ("Host", "Hello.", "A diagram"),
+        ])
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = (
+            _make_image_response()
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+
+        asyncio.run(gen.generate(script, tmp_path))
+
+        call_kwargs = mock_client.models.generate_content.call_args
+        assert call_kwargs.kwargs["model"] == "gemini-custom"
+
+    def test_image_config_has_aspect_ratio(
+        self, generator, tmp_path, mocker
+    ):
+        """Config should include image_config with 16:9 aspect_ratio."""
+        script = _make_script([
+            ("Host", "Hello.", "A diagram"),
+        ])
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = (
+            _make_image_response()
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+
+        asyncio.run(generator.generate(script, tmp_path))
+
+        call_kwargs = mock_client.models.generate_content.call_args
+        config = call_kwargs.kwargs["config"]
+        assert config.image_config is not None
+        assert config.image_config.aspect_ratio == "16:9"
+
+
+# ---------------------------------------------------------------------------
+# Fallback ffmpeg errors
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackFFmpegErrors:
+    def test_ffmpeg_not_found_raises_error(
+        self, generator, tmp_path, mocker
+    ):
+        """Missing ffmpeg during fallback should raise VisualGenerationError."""
+        script = _make_script([
+            ("Host", "Hello.", "Failing diagram"),
+        ])
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception(
+            "API error"
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.subprocess.run",
+            side_effect=FileNotFoundError("ffmpeg not found"),
+        )
+
+        with pytest.raises(VisualGenerationError, match="not installed"):
+            asyncio.run(generator.generate(script, tmp_path))
+
+    def test_ffmpeg_nonzero_exit_raises_error(
+        self, generator, tmp_path, mocker
+    ):
+        """Non-zero ffmpeg exit code should raise VisualGenerationError."""
+        script = _make_script([
+            ("Host", "Hello.", "Failing diagram"),
+        ])
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception(
+            "API error"
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.subprocess.run",
+            return_value=MagicMock(returncode=1, stderr="error"),
+        )
+
+        with pytest.raises(VisualGenerationError, match="ffmpeg fallback failed"):
+            asyncio.run(generator.generate(script, tmp_path))
 
 
 # ---------------------------------------------------------------------------
