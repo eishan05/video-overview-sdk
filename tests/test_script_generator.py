@@ -524,3 +524,179 @@ class TestTimeoutConfig:
             llm_backend="claude",
         )
         assert mock_run.call_args[1]["timeout"] == 300
+
+
+# ---------------------------------------------------------------------------
+# Invalid mode handling (Codex review finding #2)
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidMode:
+    def test_invalid_mode_raises_error(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Invalid mode should raise ScriptGenerationError."""
+        with pytest.raises(
+            ScriptGenerationError, match="Invalid mode"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="converstion",  # typo
+                llm_backend="claude",
+            )
+
+    def test_empty_mode_raises_error(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Empty mode string should raise ScriptGenerationError."""
+        with pytest.raises(
+            ScriptGenerationError, match="Invalid mode"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="",
+                llm_backend="claude",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Max segments enforcement (Codex review finding #1)
+# ---------------------------------------------------------------------------
+
+
+class TestMaxSegmentsEnforcement:
+    def test_exceeding_max_segments_raises_error(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Response with more segments than max should raise error."""
+        over_limit = {
+            "title": "Too Many Segments",
+            "segments": [
+                {
+                    "speaker": "Host",
+                    "text": f"Segment {i}",
+                    "visual_prompt": f"Visual {i}",
+                }
+                if i % 2 == 0
+                else {
+                    "speaker": "Expert",
+                    "text": f"Segment {i}",
+                    "visual_prompt": f"Visual {i}",
+                }
+                for i in range(5)
+            ],
+        }
+        mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(over_limit),
+        )
+        with pytest.raises(
+            ScriptGenerationError, match="exceeding the maximum"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+                max_segments=2,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Speaker validation (Codex review finding #3)
+# ---------------------------------------------------------------------------
+
+
+class TestSpeakerValidation:
+    def test_wrong_speaker_in_conversation_mode(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Conversation mode should reject Narrator speaker."""
+        bad_response = {
+            "title": "Test",
+            "segments": [
+                {
+                    "speaker": "Narrator",
+                    "text": "Hello",
+                    "visual_prompt": "Image",
+                },
+            ],
+        }
+        mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(bad_response),
+        )
+        with pytest.raises(
+            ScriptGenerationError, match="Invalid speaker"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+            )
+
+    def test_wrong_speaker_in_narration_mode(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Narration mode should reject Host/Expert speakers."""
+        bad_response = {
+            "title": "Test",
+            "segments": [
+                {
+                    "speaker": "Host",
+                    "text": "Hello",
+                    "visual_prompt": "Image",
+                },
+            ],
+        }
+        mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(bad_response),
+        )
+        with pytest.raises(
+            ScriptGenerationError, match="Invalid speaker"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="narration",
+                llm_backend="claude",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Claude error wrapper handling (Codex review finding #4)
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeErrorWrapper:
+    def test_claude_is_error_flag(
+        self, generator, sample_content_bundle, mocker
+    ):
+        """Claude wrapper with is_error=True should raise error."""
+        error_wrapper = {
+            "type": "result",
+            "is_error": True,
+            "result": "Rate limit exceeded",
+        }
+        mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                args=["claude"],
+                returncode=0,
+                stdout=json.dumps(error_wrapper),
+                stderr="",
+            ),
+        )
+        with pytest.raises(
+            ScriptGenerationError, match="Claude returned an error"
+        ):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+            )

@@ -46,9 +46,37 @@ class ScriptGenerator:
             ScriptGenerationError: On subprocess failure, timeout, JSON
                 parsing failure, or validation failure.
         """
+        _VALID_MODES = ("conversation", "narration")
+        if mode not in _VALID_MODES:
+            raise ScriptGenerationError(
+                f"Invalid mode {mode!r}; must be one of {_VALID_MODES}"
+            )
+
         prompt = self._build_prompt(content_bundle, topic, mode, max_segments)
         raw_output = self._call_llm(prompt, llm_backend)
-        return self._parse_response(raw_output)
+        script = self._parse_response(raw_output)
+
+        # Enforce max_segments server-side (LLM may exceed the limit)
+        if len(script.segments) > max_segments:
+            raise ScriptGenerationError(
+                f"LLM returned {len(script.segments)} segments, "
+                f"exceeding the maximum of {max_segments}"
+            )
+
+        # Validate speaker names match the selected mode
+        if mode == "conversation":
+            allowed_speakers = {"Host", "Expert"}
+        else:
+            allowed_speakers = {"Narrator"}
+
+        for seg in script.segments:
+            if seg.speaker not in allowed_speakers:
+                raise ScriptGenerationError(
+                    f"Invalid speaker {seg.speaker!r} for "
+                    f"{mode!r} mode; allowed: {allowed_speakers}"
+                )
+
+        return script
 
     # ------------------------------------------------------------------
     # Prompt construction
@@ -66,18 +94,27 @@ class ScriptGenerator:
             mode_instructions = (
                 "Create an engaging, educational, NotebookLM-style "
                 "conversational script between two speakers:\n"
-                "  - Host: the curious interviewer who asks insightful questions\n"
-                "  - Expert: the knowledgeable specialist who explains "
-                "concepts clearly\n"
-                "The dialogue should feel natural and engaging, as if two "
-                "colleagues are having an enthusiastic discussion about the topic."
+                "  - Host: the curious interviewer who asks "
+                "insightful questions\n"
+                "  - Expert: the knowledgeable specialist who "
+                "explains concepts clearly\n"
+                "The dialogue should feel natural and engaging, "
+                "as if two colleagues are having an enthusiastic "
+                "discussion about the topic."
+            )
+        elif mode == "narration":
+            mode_instructions = (
+                "Create an informative narration script with a "
+                "single speaker:\n"
+                "  - Narrator: a clear, authoritative voice that "
+                "guides the audience through the topic\n"
+                "The narration should be educational, well-paced, "
+                "and engaging."
             )
         else:
-            mode_instructions = (
-                "Create an informative narration script with a single speaker:\n"
-                "  - Narrator: a clear, authoritative voice that guides the "
-                "audience through the topic\n"
-                "The narration should be educational, well-paced, and engaging."
+            # Should not reach here due to validation in generate()
+            raise ScriptGenerationError(
+                f"Invalid mode: {mode!r}"
             )
 
         content_text = self._format_content_bundle(content_bundle)
@@ -189,14 +226,24 @@ class ScriptGenerator:
             ) from exc
 
         # Handle Claude --output-format json wrapper
-        if isinstance(data, dict) and data.get("type") == "result" and "result" in data:
+        if (
+            isinstance(data, dict)
+            and data.get("type") == "result"
+            and "result" in data
+        ):
+            # Check for Claude error responses
+            if data.get("is_error"):
+                raise ScriptGenerationError(
+                    f"Claude returned an error: {data.get('result', '')}"
+                )
             inner = data["result"]
             if isinstance(inner, str):
                 try:
                     data = json.loads(inner)
                 except json.JSONDecodeError as exc:
                     raise ScriptGenerationError(
-                        f"Failed to parse inner Claude JSON result: {exc}"
+                        "Failed to parse inner Claude JSON "
+                        f"result: {exc}"
                     ) from exc
 
         try:
