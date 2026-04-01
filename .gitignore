@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Cache
+.video_overview_cache/
+.ruff_cache/
+
+# Overnight coder
+overnight-batch-*
+overnight-coder-state-*
+overnight-coder-parallel-*.json
+
+# OS
+.DS_Store
