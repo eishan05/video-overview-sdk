@@ -26,9 +26,7 @@ class VisualGenerationError(Exception):
 class VisualGenerator:
     """Generates visual assets from a Script model using Gemini image generation."""
 
-    def __init__(
-        self, api_key: str | None, *, model: str = _MODEL
-    ) -> None:
+    def __init__(self, api_key: str | None, *, model: str = _MODEL) -> None:
         if not api_key:
             raise VisualGenerationError(
                 "API key is required. Set GEMINI_API_KEY environment variable."
@@ -153,9 +151,7 @@ class VisualGenerator:
             if visual_prompt not in failed_prompts:
                 async with semaphore:
                     try:
-                        image_bytes = await self._call_api(
-                            client, visual_prompt
-                        )
+                        image_bytes = await self._call_api(client, visual_prompt)
                         if image_bytes is not None:
                             cached_path.write_bytes(image_bytes)
                             return cached_path
@@ -180,9 +176,7 @@ class VisualGenerator:
             ).hexdigest()
             fallback_path = visuals_dir / f"{fallback_key}.png"
             if not fallback_path.exists():
-                self._create_fallback_image(
-                    segment_text, fallback_path
-                )
+                self._create_fallback_image(segment_text, fallback_path)
             return fallback_path
 
     # ------------------------------------------------------------------
@@ -198,10 +192,7 @@ class VisualGenerator:
 
         Returns image bytes or None if no image in response.
         """
-        prompt = (
-            f"Create a 16:9 informative diagram or illustration: "
-            f"{visual_prompt}"
-        )
+        prompt = f"Create a 16:9 informative diagram or illustration: {visual_prompt}"
 
         config = types.GenerateContentConfig(
             response_modalities=["IMAGE", "TEXT"],
@@ -254,8 +245,10 @@ class VisualGenerator:
         cmd = [
             "ffmpeg",
             "-y",
-            "-f", "lavfi",
-            "-i", "color=c=#1a1a2e:s=1920x1080:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=#1a1a2e:s=1920x1080:d=1",
             "-vf",
             (
                 f"drawtext=text='{escaped_text}'"
@@ -264,7 +257,8 @@ class VisualGenerator:
                 f":x=(w-text_w)/2"
                 f":y=(h-text_h)/2"
             ),
-            "-frames:v", "1",
+            "-frames:v",
+            "1",
             str(output_path),
         ]
 
@@ -280,15 +274,9 @@ class VisualGenerator:
                 "ffmpeg is not installed or not on PATH"
             ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise VisualGenerationError(
-                "ffmpeg fallback timed out"
-            ) from exc
+            raise VisualGenerationError("ffmpeg fallback timed out") from exc
         except OSError as exc:
-            raise VisualGenerationError(
-                f"ffmpeg execution error: {exc}"
-            ) from exc
+            raise VisualGenerationError(f"ffmpeg execution error: {exc}") from exc
 
         if result.returncode != 0:
-            raise VisualGenerationError(
-                f"ffmpeg fallback failed: {result.stderr}"
-            )
+            raise VisualGenerationError(f"ffmpeg fallback failed: {result.stderr}")

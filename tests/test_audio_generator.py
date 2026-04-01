@@ -223,8 +223,7 @@ class TestNarrationMode:
         config = call_kwargs.kwargs["config"]
         assert config.speech_config.voice_config is not None
         assert (
-            config.speech_config.voice_config.prebuilt_voice_config.voice_name
-            == "Kore"
+            config.speech_config.voice_config.prebuilt_voice_config.voice_name == "Kore"
         )
 
 
@@ -394,9 +393,7 @@ class TestAudioExtraction:
 
 
 class TestPCMToWAV:
-    def test_pcm_converted_to_wav(
-        self, generator, narration_script, tmp_path, mocker
-    ):
+    def test_pcm_converted_to_wav(self, generator, narration_script, tmp_path, mocker):
         """PCM mime_type should trigger WAV header addition."""
         pcm_data = _make_pcm_bytes(num_samples=500)
         mock_client = MagicMock()
@@ -429,9 +426,7 @@ class TestPCMToWAV:
                 assert wf.getsampwidth() == 2
                 assert wf.getframerate() == 24000
 
-    def test_wav_passthrough(
-        self, generator, narration_script, tmp_path, mocker
-    ):
+    def test_wav_passthrough(self, generator, narration_script, tmp_path, mocker):
         """WAV mime_type should be saved directly without conversion."""
         wav_data = _make_wav_bytes(num_samples=500)
         mock_client = MagicMock()
@@ -534,9 +529,7 @@ class TestFFmpegConcatenation:
 
 
 class TestRetryLogic:
-    def test_retries_on_api_error(
-        self, generator, narration_script, tmp_path, mocker
-    ):
+    def test_retries_on_api_error(self, generator, narration_script, tmp_path, mocker):
         """Should retry on API error and succeed on second attempt."""
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
@@ -625,9 +618,7 @@ class TestRetryLogic:
 
 
 class TestSegmentDuration:
-    def test_durations_proportional_to_text_length(
-        self, generator, tmp_path, mocker
-    ):
+    def test_durations_proportional_to_text_length(self, generator, tmp_path, mocker):
         """Segment durations should be proportional to text length."""
         script = _make_script(
             [
@@ -784,9 +775,7 @@ class TestReturnType:
 
 
 class TestModelName:
-    def test_uses_correct_model(
-        self, generator, narration_script, tmp_path, mocker
-    ):
+    def test_uses_correct_model(self, generator, narration_script, tmp_path, mocker):
         """Should use gemini-2.5-flash-preview-tts model."""
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
@@ -879,10 +868,12 @@ class TestSpeakerValidation:
 
     def test_mixed_modes_raises_error(self, generator, tmp_path):
         """Script mixing Host and Narrator should raise error."""
-        script = _make_script([
-            ("Host", "Hello!"),
-            ("Narrator", "Welcome."),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Hello!"),
+                ("Narrator", "Welcome."),
+            ]
+        )
         with pytest.raises(AudioGenerationError, match="mixes"):
             generator.generate(
                 script=script,
@@ -899,9 +890,7 @@ class TestSpeakerValidation:
         script = _make_script([("Host", "Solo host segment.")])
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = _mock_response(
-            wav_data
-        )
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
         mocker.patch(
             "video_overview.audio.generator.genai.Client",
             return_value=mock_client,
@@ -924,8 +913,8 @@ class TestSpeakerValidation:
         # Single-speaker batch should use single VoiceConfig
         assert config.speech_config.voice_config is not None
         assert (
-            config.speech_config.voice_config
-            .prebuilt_voice_config.voice_name == "Aoede"
+            config.speech_config.voice_config.prebuilt_voice_config.voice_name
+            == "Aoede"
         )
 
 
@@ -941,9 +930,7 @@ class TestFFmpegErrors:
         """Missing ffmpeg should raise AudioGenerationError."""
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = _mock_response(
-            wav_data
-        )
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
         mocker.patch(
             "video_overview.audio.generator.genai.Client",
             return_value=mock_client,
@@ -970,9 +957,7 @@ class TestFFmpegErrors:
 
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = _mock_response(
-            wav_data
-        )
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
         mocker.patch(
             "video_overview.audio.generator.genai.Client",
             return_value=mock_client,

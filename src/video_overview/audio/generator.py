@@ -73,18 +73,14 @@ class AudioGenerator:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         if not script.segments:
-            raise AudioGenerationError(
-                "Script must contain at least one segment."
-            )
+            raise AudioGenerationError("Script must contain at least one segment.")
 
         client = genai.Client(api_key=self._api_key)
 
         # Determine mode from speaker names (not count).
         # Conversation uses Host/Expert; narration uses Narrator.
         unique_speakers = {seg.speaker for seg in script.segments}
-        is_conversation = bool(
-            unique_speakers & _CONVERSATION_SPEAKERS
-        )
+        is_conversation = bool(unique_speakers & _CONVERSATION_SPEAKERS)
         is_narration = bool(unique_speakers & _NARRATION_SPEAKERS)
 
         if is_conversation and is_narration:
@@ -117,12 +113,8 @@ class AudioGenerator:
         chunk_paths: list[Path] = []
         for i, batch in enumerate(batches):
             prompt = self._build_prompt(batch)
-            config = self._build_config(
-                batch, is_multi_speaker, voice_map
-            )
-            audio_bytes = self._call_api_with_retry(
-                client, prompt, config
-            )
+            config = self._build_config(batch, is_multi_speaker, voice_map)
+            audio_bytes = self._call_api_with_retry(client, prompt, config)
             chunk_path = cache_dir / f"chunk_{i:03d}.wav"
             chunk_path.write_bytes(audio_bytes)
             chunk_paths.append(chunk_path)
@@ -144,9 +136,7 @@ class AudioGenerator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _chunk_segments(
-        segments: list, batch_size: int = _BATCH_SIZE
-    ) -> list[list]:
+    def _chunk_segments(segments: list, batch_size: int = _BATCH_SIZE) -> list[list]:
         """Split segments into batches of approximately batch_size."""
         batches = []
         for i in range(0, len(segments), batch_size):
@@ -290,9 +280,7 @@ class AudioGenerator:
         # replace ' with '\'' (end quote, escaped quote, start quote)
         filelist.write_text(
             "\n".join(
-                "file '{}'".format(
-                    str(p.resolve()).replace("'", "'\\''")
-                )
+                "file '{}'".format(str(p.resolve()).replace("'", "'\\''"))
                 for p in chunk_paths
             )
         )
@@ -300,10 +288,14 @@ class AudioGenerator:
         cmd = [
             "ffmpeg",
             "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(filelist),
-            "-c", "copy",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(filelist),
+            "-c",
+            "copy",
             str(output_path),
         ]
 
@@ -319,18 +311,12 @@ class AudioGenerator:
                 "ffmpeg is not installed or not on PATH"
             ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise AudioGenerationError(
-                "ffmpeg concatenation timed out"
-            ) from exc
+            raise AudioGenerationError("ffmpeg concatenation timed out") from exc
         except OSError as exc:
-            raise AudioGenerationError(
-                f"ffmpeg execution error: {exc}"
-            ) from exc
+            raise AudioGenerationError(f"ffmpeg execution error: {exc}") from exc
 
         if result.returncode != 0:
-            raise AudioGenerationError(
-                f"ffmpeg concatenation failed: {result.stderr}"
-            )
+            raise AudioGenerationError(f"ffmpeg concatenation failed: {result.stderr}")
 
     # ------------------------------------------------------------------
     # Duration estimation
@@ -342,10 +328,7 @@ class AudioGenerator:
 
         Uses an approximate speaking rate of ~12.5 characters per second.
         """
-        return [
-            max(0.5, len(seg.text) / _CHARS_PER_SECOND)
-            for seg in segments
-        ]
+        return [max(0.5, len(seg.text) / _CHARS_PER_SECOND) for seg in segments]
 
 
 # ---------------------------------------------------------------------------

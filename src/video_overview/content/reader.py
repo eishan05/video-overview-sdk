@@ -8,24 +8,67 @@ from pathlib import Path, PurePosixPath
 import pathspec
 
 # Extensions that are always skipped (binary/compiled)
-_SKIP_EXTENSIONS = frozenset({
-    ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
-    ".egg-info", ".whl", ".tar", ".gz", ".zip", ".jar",
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
-    ".mp3", ".mp4", ".avi", ".mov", ".wav", ".flac",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-    ".o", ".a", ".lib", ".class",
-    ".sqlite", ".db",
-})
+_SKIP_EXTENSIONS = frozenset(
+    {
+        ".pyc",
+        ".pyo",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".egg-info",
+        ".whl",
+        ".tar",
+        ".gz",
+        ".zip",
+        ".jar",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".svg",
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".wav",
+        ".flac",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".o",
+        ".a",
+        ".lib",
+        ".class",
+        ".sqlite",
+        ".db",
+    }
+)
 
 # Directories that are always skipped
-_SKIP_DIRS = frozenset({
-    "__pycache__", ".git", ".hg", ".svn",
-    "node_modules", ".tox", ".mypy_cache",
-    ".pytest_cache", ".ruff_cache",
-    ".egg-info", "dist", ".eggs",
-    ".venv", "venv", "env",
-})
+_SKIP_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".egg-info",
+        "dist",
+        ".eggs",
+        ".venv",
+        "venv",
+        "env",
+    }
+)
 
 # Extension to language mapping
 _EXTENSION_TO_LANGUAGE: dict[str, str] = {
@@ -226,13 +269,9 @@ class ContentReader:
         source_dir = Path(source_dir).resolve()
 
         if not source_dir.exists():
-            raise FileNotFoundError(
-                f"source_dir does not exist: {source_dir}"
-            )
+            raise FileNotFoundError(f"source_dir does not exist: {source_dir}")
         if not source_dir.is_dir():
-            raise NotADirectoryError(
-                f"source_dir is not a directory: {source_dir}"
-            )
+            raise NotADirectoryError(f"source_dir is not a directory: {source_dir}")
 
         # Load .gitignore if present
         gitignore_spec = self._load_gitignore(source_dir)
@@ -246,8 +285,7 @@ class ContentReader:
             # Skip files inside always-skipped directories
             rel_parts = path.relative_to(source_dir).parts
             if any(
-                part in _SKIP_DIRS or part.endswith(".egg-info")
-                for part in rel_parts
+                part in _SKIP_DIRS or part.endswith(".egg-info") for part in rel_parts
             ):
                 continue
 
@@ -298,11 +336,13 @@ class ContentReader:
                     + f"\n\n... [truncated — {len(text)} total chars]"
                 )
 
-            file_entries.append({
-                "path": rel_path,
-                "content": text,
-                "language": language,
-            })
+            file_entries.append(
+                {
+                    "path": rel_path,
+                    "content": text,
+                    "language": language,
+                }
+            )
 
         # Sort files by relevance
         file_entries.sort(key=lambda f: _file_sort_key(f["path"]))
@@ -328,10 +368,7 @@ class ContentReader:
                     available = budget - suffix_len
                     if available > 0:
                         # Room for content + suffix
-                        entry["content"] = (
-                            entry["content"][:available]
-                            + _BUDGET_SUFFIX
-                        )
+                        entry["content"] = entry["content"][:available] + _BUDGET_SUFFIX
                     else:
                         # Very small budget — include raw prefix only
                         entry["content"] = entry["content"][:budget]

@@ -92,9 +92,9 @@ class TestIncludeFilter:
     def test_include_multiple_patterns(self, reader, sample_dir):
         result = reader.read(sample_dir, include=["*.py", "*.yaml"])
         for f in result["files"]:
-            assert f["path"].endswith(".py") or f["path"].endswith(
-                ".yaml"
-            ), f"Unexpected file: {f['path']}"
+            assert f["path"].endswith(".py") or f["path"].endswith(".yaml"), (
+                f"Unexpected file: {f['path']}"
+            )
 
     def test_include_path_based_pattern(self, reader, sample_dir):
         """Path-based include patterns like 'src/*.py' should work."""
@@ -137,9 +137,9 @@ class TestExcludeFilter:
     def test_exclude_yaml_files(self, reader, sample_dir):
         result = reader.read(sample_dir, exclude=["*.yaml"])
         for f in result["files"]:
-            assert not f["path"].endswith(
-                ".yaml"
-            ), f"Expected no .yaml files, got {f['path']}"
+            assert not f["path"].endswith(".yaml"), (
+                f"Expected no .yaml files, got {f['path']}"
+            )
 
     def test_exclude_directory_pattern(self, reader, sample_dir):
         result = reader.read(sample_dir, exclude=["docs/*"])

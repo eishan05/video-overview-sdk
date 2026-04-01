@@ -17,15 +17,12 @@ from video_overview.visuals import VisualGenerationError, VisualGenerator
 # ---------------------------------------------------------------------------
 
 
-def _make_script(
-    segments: list[tuple[str, str, str]], title: str = "Test"
-) -> Script:
+def _make_script(segments: list[tuple[str, str, str]], title: str = "Test") -> Script:
     """Build a Script with the given (speaker, text, visual_prompt) triples."""
     return Script(
         title=title,
         segments=[
-            ScriptSegment(speaker=s, text=t, visual_prompt=vp)
-            for s, t, vp in segments
+            ScriptSegment(speaker=s, text=t, visual_prompt=vp) for s, t, vp in segments
         ],
     )
 
@@ -91,11 +88,13 @@ def generator(api_key: str) -> VisualGenerator:
 
 @pytest.fixture()
 def three_segment_script() -> Script:
-    return _make_script([
-        ("Host", "Welcome to the overview.", "A welcome banner diagram"),
-        ("Expert", "Let me explain.", "Architecture diagram of the system"),
-        ("Host", "That's fascinating.", "Summary infographic"),
-    ])
+    return _make_script(
+        [
+            ("Host", "Welcome to the overview.", "A welcome banner diagram"),
+            ("Expert", "Let me explain.", "Architecture diagram of the system"),
+            ("Host", "That's fascinating.", "Summary infographic"),
+        ]
+    )
 
 
 @pytest.fixture()
@@ -106,11 +105,13 @@ def empty_script() -> Script:
 @pytest.fixture()
 def duplicate_prompt_script() -> Script:
     """Script where two segments share the same visual_prompt."""
-    return _make_script([
-        ("Host", "First segment.", "Shared diagram prompt"),
-        ("Expert", "Second segment.", "Unique diagram prompt"),
-        ("Host", "Third segment.", "Shared diagram prompt"),
-    ])
+    return _make_script(
+        [
+            ("Host", "First segment.", "Shared diagram prompt"),
+            ("Expert", "Second segment.", "Unique diagram prompt"),
+            ("Host", "Third segment.", "Shared diagram prompt"),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,13 +137,9 @@ class TestAPIKeyValidation:
 
 
 class TestEmptyScript:
-    def test_empty_script_returns_empty_list(
-        self, generator, empty_script, tmp_path
-    ):
+    def test_empty_script_returns_empty_list(self, generator, empty_script, tmp_path):
         """Empty script should return an empty list of paths."""
-        result = asyncio.run(
-            generator.generate(empty_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(empty_script, tmp_path))
         assert result == []
 
 
@@ -157,17 +154,13 @@ class TestImageGeneration:
     ):
         """Should generate one image per segment."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
         )
 
-        result = asyncio.run(
-            generator.generate(three_segment_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(three_segment_script, tmp_path))
 
         assert len(result) == 3
         assert all(isinstance(p, Path) for p in result)
@@ -192,26 +185,22 @@ class TestImageGeneration:
             return_value=mock_client,
         )
 
-        result = asyncio.run(
-            generator.generate(three_segment_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(three_segment_script, tmp_path))
 
         # Each returned path should match the hash-based cache key
         for i, seg in enumerate(three_segment_script.segments):
             expected_hash = _cache_key(seg.visual_prompt)
             assert expected_hash in str(result[i])
 
-    def test_api_called_with_correct_prompt(
-        self, generator, tmp_path, mocker
-    ):
+    def test_api_called_with_correct_prompt(self, generator, tmp_path, mocker):
         """API prompt should request 16:9 informative diagram."""
-        script = _make_script([
-            ("Host", "Hello.", "A welcome banner"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A welcome banner"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -224,17 +213,15 @@ class TestImageGeneration:
         assert "16:9" in prompt
         assert "A welcome banner" in prompt
 
-    def test_response_modalities_include_image(
-        self, generator, tmp_path, mocker
-    ):
+    def test_response_modalities_include_image(self, generator, tmp_path, mocker):
         """Config should specify IMAGE in response_modalities."""
-        script = _make_script([
-            ("Host", "Hello.", "A welcome banner"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A welcome banner"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -253,17 +240,17 @@ class TestImageGeneration:
 
 
 class TestImageExtraction:
-    def test_extracts_image_from_inline_data(
-        self, generator, tmp_path, mocker
-    ):
+    def test_extracts_image_from_inline_data(self, generator, tmp_path, mocker):
         """Image bytes from response inline_data should be saved to PNG."""
-        image_bytes = b"\x89PNG" + b"\xDE\xAD" * 50
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
+        image_bytes = b"\x89PNG" + b"\xde\xad" * 50
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
+        )
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response(data=image_bytes)
+        mock_client.models.generate_content.return_value = _make_image_response(
+            data=image_bytes
         )
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
@@ -279,13 +266,13 @@ class TestImageExtraction:
         self, generator, tmp_path, mocker
     ):
         """Response with no inline_data should trigger fallback image."""
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_no_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_no_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -313,32 +300,25 @@ class TestConcurrentGeneration:
     ):
         """Should use asyncio.gather with semaphore for concurrency."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
         )
 
-        result = asyncio.run(
-            generator.generate(three_segment_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(three_segment_script, tmp_path))
 
         # All 3 segments should have been generated
         assert len(result) == 3
         # API should have been called 3 times (one per unique prompt)
         assert mock_client.models.generate_content.call_count == 3
 
-    def test_semaphore_limits_concurrency(
-        self, generator, tmp_path, mocker
-    ):
+    def test_semaphore_limits_concurrency(self, generator, tmp_path, mocker):
         """Semaphore should limit to max 3 concurrent generations."""
         # Create a script with 6 segments (more than semaphore limit)
-        script = _make_script([
-            ("Host", f"Segment {i}.", f"Unique prompt {i}")
-            for i in range(6)
-        ])
+        script = _make_script(
+            [("Host", f"Segment {i}.", f"Unique prompt {i}") for i in range(6)]
+        )
 
         concurrent_count = 0
         max_concurrent = 0
@@ -359,9 +339,7 @@ class TestConcurrentGeneration:
                     concurrent_count -= 1
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -384,13 +362,13 @@ class TestConcurrentGeneration:
 
 
 class TestCaching:
-    def test_cache_hit_skips_api_call(
-        self, generator, tmp_path, mocker
-    ):
+    def test_cache_hit_skips_api_call(self, generator, tmp_path, mocker):
         """Cached image should be returned without API call."""
-        script = _make_script([
-            ("Host", "Hello.", "Cached diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Cached diagram"),
+            ]
+        )
 
         # Pre-populate cache
         visuals_dir = tmp_path / "visuals"
@@ -412,18 +390,16 @@ class TestCaching:
         # API should NOT have been called
         mock_client.models.generate_content.assert_not_called()
 
-    def test_cache_miss_calls_api(
-        self, generator, tmp_path, mocker
-    ):
+    def test_cache_miss_calls_api(self, generator, tmp_path, mocker):
         """New visual_prompt should trigger API call."""
-        script = _make_script([
-            ("Host", "Hello.", "Brand new diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Brand new diagram"),
+            ]
+        )
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -439,17 +415,13 @@ class TestCaching:
     ):
         """Segments with same visual_prompt should reuse the cached image."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
         )
 
-        result = asyncio.run(
-            generator.generate(duplicate_prompt_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(duplicate_prompt_script, tmp_path))
 
         assert len(result) == 3
         # Only 2 unique prompts, so API called twice
@@ -467,14 +439,14 @@ class TestCaching:
         self, generator, tmp_path, mocker
     ):
         """When API fails, segments with same prompt get per-segment fallback."""
-        script = _make_script([
-            ("Host", "First segment text.", "Shared prompt"),
-            ("Expert", "Second segment text.", "Shared prompt"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
+        script = _make_script(
+            [
+                ("Host", "First segment text.", "Shared prompt"),
+                ("Expert", "Second segment text.", "Shared prompt"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -502,18 +474,16 @@ class TestCaching:
 
 
 class TestFallbackOnFailure:
-    def test_api_failure_creates_fallback_image(
-        self, generator, tmp_path, mocker
-    ):
+    def test_api_failure_creates_fallback_image(self, generator, tmp_path, mocker):
         """API failure should create fallback text-on-background image."""
-        script = _make_script([
-            ("Host", "Hello.", "Failing diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Failing diagram"),
+            ]
+        )
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
-        )
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -529,18 +499,16 @@ class TestFallbackOnFailure:
         # FFmpeg should have been called for fallback
         assert mock_run.call_count == 1
 
-    def test_fallback_ffmpeg_command_construction(
-        self, generator, tmp_path, mocker
-    ):
+    def test_fallback_ffmpeg_command_construction(self, generator, tmp_path, mocker):
         """Fallback should use correct ffmpeg command for text slide."""
-        script = _make_script([
-            ("Host", "Hello world.", "Failing diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Hello world.", "Failing diagram"),
+            ]
+        )
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
-        )
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -563,18 +531,16 @@ class TestFallbackOnFailure:
         assert "fontcolor=white" in cmd_str
         assert "Hello world." in cmd_str or "Hello world" in cmd_str
 
-    def test_fallback_uses_dark_background(
-        self, generator, tmp_path, mocker
-    ):
+    def test_fallback_uses_dark_background(self, generator, tmp_path, mocker):
         """Fallback image should use #1a1a2e background color."""
-        script = _make_script([
-            ("Host", "Test.", "Failing diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "Test.", "Failing diagram"),
+            ]
+        )
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
-        )
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -590,18 +556,16 @@ class TestFallbackOnFailure:
         cmd_str = " ".join(ffmpeg_cmd)
         assert "1a1a2e" in cmd_str
 
-    def test_fallback_escapes_special_chars(
-        self, generator, tmp_path, mocker
-    ):
+    def test_fallback_escapes_special_chars(self, generator, tmp_path, mocker):
         """Special chars in text should be escaped for ffmpeg drawtext."""
-        script = _make_script([
-            ("Host", "It's a test: 100%!", "Failing diagram"),
-        ])
+        script = _make_script(
+            [
+                ("Host", "It's a test: 100%!", "Failing diagram"),
+            ]
+        )
 
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
-        )
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -627,17 +591,15 @@ class TestFallbackOnFailure:
 
 
 class TestModelConfiguration:
-    def test_uses_default_model(
-        self, generator, tmp_path, mocker
-    ):
+    def test_uses_default_model(self, generator, tmp_path, mocker):
         """Should default to gemini-2.0-flash-exp."""
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -652,13 +614,13 @@ class TestModelConfiguration:
     def test_custom_model(self, api_key, tmp_path, mocker):
         """Should use a custom model when specified."""
         gen = VisualGenerator(api_key=api_key, model="gemini-custom")
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -669,17 +631,15 @@ class TestModelConfiguration:
         call_kwargs = mock_client.models.generate_content.call_args
         assert call_kwargs.kwargs["model"] == "gemini-custom"
 
-    def test_image_config_has_aspect_ratio(
-        self, generator, tmp_path, mocker
-    ):
+    def test_image_config_has_aspect_ratio(self, generator, tmp_path, mocker):
         """Config should include image_config with 16:9 aspect_ratio."""
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -699,17 +659,15 @@ class TestModelConfiguration:
 
 
 class TestFallbackFFmpegErrors:
-    def test_ffmpeg_not_found_raises_error(
-        self, generator, tmp_path, mocker
-    ):
+    def test_ffmpeg_not_found_raises_error(self, generator, tmp_path, mocker):
         """Missing ffmpeg during fallback should raise VisualGenerationError."""
-        script = _make_script([
-            ("Host", "Hello.", "Failing diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Failing diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -722,17 +680,15 @@ class TestFallbackFFmpegErrors:
         with pytest.raises(VisualGenerationError, match="not installed"):
             asyncio.run(generator.generate(script, tmp_path))
 
-    def test_ffmpeg_nonzero_exit_raises_error(
-        self, generator, tmp_path, mocker
-    ):
+    def test_ffmpeg_nonzero_exit_raises_error(self, generator, tmp_path, mocker):
         """Non-zero ffmpeg exit code should raise VisualGenerationError."""
-        script = _make_script([
-            ("Host", "Hello.", "Failing diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API error"
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Failing diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -752,17 +708,15 @@ class TestFallbackFFmpegErrors:
 
 
 class TestCacheDirectory:
-    def test_creates_visuals_subdirectory(
-        self, generator, tmp_path, mocker
-    ):
+    def test_creates_visuals_subdirectory(self, generator, tmp_path, mocker):
         """Should create a 'visuals' subdirectory under cache_dir."""
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -774,17 +728,15 @@ class TestCacheDirectory:
         assert visuals_dir.exists()
         assert visuals_dir.is_dir()
 
-    def test_creates_nested_cache_dir(
-        self, generator, tmp_path, mocker
-    ):
+    def test_creates_nested_cache_dir(self, generator, tmp_path, mocker):
         """Should create cache_dir and visuals subdir if they don't exist."""
-        script = _make_script([
-            ("Host", "Hello.", "A diagram"),
-        ])
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
+        script = _make_script(
+            [
+                ("Host", "Hello.", "A diagram"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
@@ -809,17 +761,13 @@ class TestReturnType:
     ):
         """generate() should return list[Path]."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = (
-            _make_image_response()
-        )
+        mock_client.models.generate_content.return_value = _make_image_response()
         mocker.patch(
             "video_overview.visuals.generator.genai.Client",
             return_value=mock_client,
         )
 
-        result = asyncio.run(
-            generator.generate(three_segment_script, tmp_path)
-        )
+        result = asyncio.run(generator.generate(three_segment_script, tmp_path))
 
         assert isinstance(result, list)
         assert all(isinstance(p, Path) for p in result)

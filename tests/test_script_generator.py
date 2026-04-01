@@ -14,6 +14,7 @@ from video_overview.script import ScriptGenerationError, ScriptGenerator
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def generator() -> ScriptGenerator:
     return ScriptGenerator()
@@ -230,14 +231,13 @@ class TestResponseParsing:
             assert seg.text
             assert seg.visual_prompt
 
-    def test_invalid_json_raises_error(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_invalid_json_raises_error(self, generator, sample_content_bundle, mocker):
         """Invalid JSON response should raise ScriptGenerationError."""
         mocker.patch(
             "video_overview.script.generator.subprocess.run",
             return_value=subprocess.CompletedProcess(
-                args=["claude"], returncode=0,
+                args=["claude"],
+                returncode=0,
                 stdout="this is not json {{{",
                 stderr="",
             ),
@@ -313,9 +313,7 @@ class TestResponseParsing:
 
 
 class TestSubprocessErrors:
-    def test_timeout_raises_error(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_timeout_raises_error(self, generator, sample_content_bundle, mocker):
         """Subprocess timeout should raise ScriptGenerationError."""
         mocker.patch(
             "video_overview.script.generator.subprocess.run",
@@ -336,8 +334,10 @@ class TestSubprocessErrors:
         mocker.patch(
             "video_overview.script.generator.subprocess.run",
             return_value=subprocess.CompletedProcess(
-                args=["claude"], returncode=1,
-                stdout="", stderr="Some CLI error",
+                args=["claude"],
+                returncode=1,
+                stdout="",
+                stderr="Some CLI error",
             ),
         )
         with pytest.raises(ScriptGenerationError, match="exit code"):
@@ -348,9 +348,7 @@ class TestSubprocessErrors:
                 llm_backend="claude",
             )
 
-    def test_subprocess_general_error(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_subprocess_general_error(self, generator, sample_content_bundle, mocker):
         """General subprocess errors should raise ScriptGenerationError."""
         mocker.patch(
             "video_overview.script.generator.subprocess.run",
@@ -477,9 +475,7 @@ class TestPromptParameters:
 
 
 class TestEmptyContentBundle:
-    def test_empty_content_bundle(
-        self, generator, valid_conversation_response, mocker
-    ):
+    def test_empty_content_bundle(self, generator, valid_conversation_response, mocker):
         """Empty content bundle should still generate (may produce minimal output)."""
         empty_bundle = {
             "directory_structure": "empty/\n",
@@ -532,13 +528,9 @@ class TestTimeoutConfig:
 
 
 class TestInvalidMode:
-    def test_invalid_mode_raises_error(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_invalid_mode_raises_error(self, generator, sample_content_bundle, mocker):
         """Invalid mode should raise ScriptGenerationError."""
-        with pytest.raises(
-            ScriptGenerationError, match="Invalid mode"
-        ):
+        with pytest.raises(ScriptGenerationError, match="Invalid mode"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",
@@ -546,13 +538,9 @@ class TestInvalidMode:
                 llm_backend="claude",
             )
 
-    def test_empty_mode_raises_error(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_empty_mode_raises_error(self, generator, sample_content_bundle, mocker):
         """Empty mode string should raise ScriptGenerationError."""
-        with pytest.raises(
-            ScriptGenerationError, match="Invalid mode"
-        ):
+        with pytest.raises(ScriptGenerationError, match="Invalid mode"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",
@@ -592,9 +580,7 @@ class TestMaxSegmentsEnforcement:
             "video_overview.script.generator.subprocess.run",
             return_value=_make_subprocess_result(over_limit),
         )
-        with pytest.raises(
-            ScriptGenerationError, match="exceeding the maximum"
-        ):
+        with pytest.raises(ScriptGenerationError, match="exceeding the maximum"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",
@@ -628,9 +614,7 @@ class TestSpeakerValidation:
             "video_overview.script.generator.subprocess.run",
             return_value=_make_subprocess_result(bad_response),
         )
-        with pytest.raises(
-            ScriptGenerationError, match="Invalid speaker"
-        ):
+        with pytest.raises(ScriptGenerationError, match="Invalid speaker"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",
@@ -656,9 +640,7 @@ class TestSpeakerValidation:
             "video_overview.script.generator.subprocess.run",
             return_value=_make_subprocess_result(bad_response),
         )
-        with pytest.raises(
-            ScriptGenerationError, match="Invalid speaker"
-        ):
+        with pytest.raises(ScriptGenerationError, match="Invalid speaker"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",
@@ -673,9 +655,7 @@ class TestSpeakerValidation:
 
 
 class TestClaudeErrorWrapper:
-    def test_claude_is_error_flag(
-        self, generator, sample_content_bundle, mocker
-    ):
+    def test_claude_is_error_flag(self, generator, sample_content_bundle, mocker):
         """Claude wrapper with is_error=True should raise error."""
         error_wrapper = {
             "type": "result",
@@ -691,9 +671,7 @@ class TestClaudeErrorWrapper:
                 stderr="",
             ),
         )
-        with pytest.raises(
-            ScriptGenerationError, match="Claude returned an error"
-        ):
+        with pytest.raises(ScriptGenerationError, match="Claude returned an error"):
             generator.generate(
                 content_bundle=sample_content_bundle,
                 topic="My Project",

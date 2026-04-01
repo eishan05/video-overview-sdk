@@ -75,9 +75,7 @@ class OverviewConfig(BaseModel):
     def _validate_output(cls, v: Path) -> Path:
         v = Path(v)
         if not v.parent.exists():
-            raise ValueError(
-                f"output parent directory does not exist: {v.parent}"
-            )
+            raise ValueError(f"output parent directory does not exist: {v.parent}")
         if v.exists() and v.is_dir():
             raise ValueError(
                 f"output must be a file path, not an existing directory: {v}"
@@ -90,18 +88,14 @@ class OverviewConfig(BaseModel):
         if v is not None:
             v = Path(v)
             if v.exists() and not v.is_dir():
-                raise ValueError(
-                    f"cache_dir exists but is not a directory: {v}"
-                )
+                raise ValueError(f"cache_dir exists but is not a directory: {v}")
         return v
 
     @staticmethod
     def _check_cache_dir_is_not_file(path: Path) -> None:
         """Raise if *path* exists and is not a directory."""
         if path.exists() and not path.is_dir():
-            raise ValueError(
-                f"cache_dir exists but is not a directory: {path}"
-            )
+            raise ValueError(f"cache_dir exists but is not a directory: {path}")
 
     @model_validator(mode="after")
     def _set_cache_dir_default(self) -> OverviewConfig:
@@ -118,6 +112,4 @@ class OverviewConfig(BaseModel):
         Checks ``GEMINI_API_KEY`` first, falling back to ``GOOGLE_API_KEY``.
         Returns ``None`` if neither is set.
         """
-        return os.environ.get("GEMINI_API_KEY") or os.environ.get(
-            "GOOGLE_API_KEY"
-        )
+        return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")

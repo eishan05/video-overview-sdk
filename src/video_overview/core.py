@@ -70,15 +70,11 @@ async def _run_audio_and_visuals(
         cache_dir=config.cache_dir,
     )
 
-    audio_result, visual_result = await asyncio.gather(
-        audio_task, visual_task
-    )
+    audio_result, visual_result = await asyncio.gather(audio_task, visual_task)
     return audio_result, visual_result
 
 
-def create_overview(
-    config: OverviewConfig | None = None, **kwargs
-) -> OverviewResult:
+def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewResult:
     """Create a video or audio overview from source content.
 
     Accepts either an ``OverviewConfig`` object or keyword arguments
