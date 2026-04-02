@@ -30,13 +30,8 @@ htmlcov/
 .video_overview_cache/
 .ruff_cache/
 
-# Overnight coder
-overnight-batch-*
-overnight-coder-state-*
-overnight-coder-parallel-*.json
-
-# Worktrees
-.worktrees/
+# Environment
+.env
 
 # OS
 .DS_Store
