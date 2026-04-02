@@ -58,21 +58,23 @@ class TestScript:
         assert len(script.segments) == 1
         assert script.segments[0].speaker == "Host"
 
-    def test_empty_segments_list(self):
-        script = Script(title="Empty", segments=[])
-        assert script.segments == []
+    def test_empty_segments_list_rejected(self):
+        with pytest.raises(ValidationError):
+            Script(title="Empty", segments=[])
 
     def test_missing_title_raises(self):
+        seg = ScriptSegment(speaker="Host", text="Hi", visual_prompt="wave")
         with pytest.raises(ValidationError):
-            Script(segments=[])  # missing title
+            Script(segments=[seg])  # missing title
 
     def test_missing_segments_raises(self):
         with pytest.raises(ValidationError):
             Script(title="No segments")  # missing segments
 
     def test_empty_title_rejected(self):
+        seg = ScriptSegment(speaker="Host", text="Hi", visual_prompt="wave")
         with pytest.raises(ValidationError):
-            Script(title="", segments=[])
+            Script(title="", segments=[seg])
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +167,7 @@ class TestOverviewConfigAllFields:
     def test_all_fields(self, tmp_path):
         source = tmp_path / "src_dir"
         source.mkdir()
-        output = tmp_path / "output.mp4"
+        output = tmp_path / "output.mp3"
         cache = tmp_path / "my_cache"
 
         cfg = OverviewConfig(

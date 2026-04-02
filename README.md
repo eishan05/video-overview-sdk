@@ -57,11 +57,19 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Set your API key:
+Set your API key in your shell:
+
+```bash
+export GEMINI_API_KEY="your-gemini-api-key"
+```
+
+Or if you use `direnv` or similar tooling, copy the template:
 
 ```bash
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
+# Edit .env and add your key — note: the SDK reads from the process
+# environment directly, so you need direnv, dotenv-cli, or similar
+# to load .env files automatically.
 ```
 
 ---
@@ -135,7 +143,7 @@ result = create_overview(config=config)
 4. Generate audio (Gemini TTS) and visuals (Gemini image gen) concurrently
 5. Assemble final output via `VideoAssembler` (ffmpeg)
 
-In audio-only mode (`format="audio"`), steps 4-5 skip visual generation and video assembly.
+In audio-only mode (`format="audio"`), visual generation is skipped. For `.wav` output, the final conversion step is skipped (audio copied directly). For `.mp3` output, `VideoAssembler` converts via ffmpeg. Note: ffmpeg is still required in all modes because `AudioGenerator` uses it internally to concatenate multi-chunk audio.
 
 **Parameters:**
 
@@ -177,7 +185,7 @@ config = OverviewConfig(
 | Field | Type | Default | Validation |
 |---|---|---|---|
 | `source_dir` | `Path` | *required* | Must exist, must be a directory |
-| `output` | `Path` | *required* | Parent must exist, must not be an existing directory |
+| `output` | `Path` | *required* | Parent must exist. Must be `.mp4` for video format, `.mp3` or `.wav` for audio format. |
 | `topic` | `str` | *required* | |
 | `include` | `list[str]` | `["*"]` | Glob patterns. `"*.py"` matches basename; `"src/*.py"` matches path. |
 | `exclude` | `list[str]` | `[]` | Same pattern syntax as `include` |
@@ -242,7 +250,7 @@ video-overview SOURCE_DIR [OPTIONS]
 |---|---|---|---|---|
 | `SOURCE_DIR` | | path | *required* | Source directory (must exist) |
 | `--topic` | `-t` | string | *required* | Topic for the overview |
-| `--output` | `-o` | path | *required* | Output file path |
+| `--output` | `-o` | path | *required* | Output file path (`.mp4` for video, `.mp3`/`.wav` for audio) |
 | `--include` | `-i` | string (repeatable) | `*` | File include patterns |
 | `--exclude` | `-e` | string (repeatable) | | File exclude patterns |
 | `--mode` | `-m` | choice | `conversation` | `conversation` or `narration` |
@@ -255,7 +263,7 @@ video-overview SOURCE_DIR [OPTIONS]
 | `--version` | | | | Print version |
 | `--help` | | | | Print help |
 
-**Exit codes:** 0 on success, 1 on error, 130 on keyboard interrupt.
+**Exit codes:** 0 on success, 1 on runtime error, 2 on invalid arguments/options (Click usage error), 130 on keyboard interrupt.
 
 ---
 
@@ -485,7 +493,7 @@ source_dir/
                         output.mp4 / .mp3
 ```
 
-Audio and visual generation run concurrently via `asyncio`. In audio-only mode, visual generation and video assembly are skipped entirely.
+Audio and visual generation run concurrently via `asyncio`. In audio-only mode, visual generation is skipped. For `.wav` output the final conversion is skipped; for `.mp3`, `VideoAssembler` converts via ffmpeg. Note that ffmpeg is always required because `AudioGenerator` uses it to concatenate multi-chunk TTS output. Only `.mp3` and `.wav` are valid audio output formats.
 
 ---
 

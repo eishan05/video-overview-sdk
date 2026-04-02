@@ -115,8 +115,9 @@ class TestAllOptionsSpecified:
     """Test CLI with all options specified."""
 
     def test_all_options_passed_to_config(
-        self, runner, source_dir, output_file, mock_result
+        self, runner, source_dir, tmp_path, mock_result
     ):
+        audio_output = tmp_path / "output.mp3"
         with patch(
             "video_overview.cli.create_overview",
             return_value=mock_result,
@@ -128,7 +129,7 @@ class TestAllOptionsSpecified:
                     "--topic",
                     "Advanced Python",
                     "--output",
-                    str(output_file),
+                    str(audio_output),
                     "--include",
                     "*.py",
                     "--include",

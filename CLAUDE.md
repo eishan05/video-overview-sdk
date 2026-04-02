@@ -57,7 +57,7 @@ src/video_overview/
 ## Dev Commands
 
 ```bash
-pytest -v                    # run tests (275 total)
+pytest -v                    # run all tests
 ruff check src/ tests/       # lint
 ruff format src/ tests/      # format
 ```

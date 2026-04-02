@@ -246,23 +246,39 @@ class AudioGenerator:
         """Extract audio bytes from the API response.
 
         Handles both audio/wav and audio/pcm mime types.
+        Iterates through candidates and parts to find the audio payload.
         """
-        part = response.candidates[0].content.parts[0]
-        data = part.inline_data.data
-        mime_type = part.inline_data.mime_type
+        if not response.candidates:
+            raise AudioGenerationError("API response contains no candidates")
 
-        if "pcm" in mime_type.lower():
-            # Parse sample rate from mime_type like "audio/pcm;rate=24000"
-            sample_rate = 24000  # default
-            if "rate=" in mime_type:
-                try:
-                    rate_str = mime_type.split("rate=")[1].split(";")[0]
-                    sample_rate = int(rate_str)
-                except (IndexError, ValueError):
-                    pass
-            data = _pcm_to_wav(data, sample_rate=sample_rate)
+        for candidate in response.candidates:
+            if not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                has_audio = (
+                    part.inline_data is not None
+                    and part.inline_data.mime_type
+                    and "audio" in part.inline_data.mime_type.lower()
+                )
+                if has_audio:
+                    data = part.inline_data.data
+                    mime_type = part.inline_data.mime_type
 
-        return data
+                    if "pcm" in mime_type.lower():
+                        sample_rate = 24000
+                        if "rate=" in mime_type:
+                            try:
+                                rate_str = mime_type.split("rate=")[1].split(";")[0]
+                                sample_rate = int(rate_str)
+                            except (IndexError, ValueError):
+                                pass
+                        data = _pcm_to_wav(data, sample_rate=sample_rate)
+
+                    return data
+
+        raise AudioGenerationError(
+            "API response contains no audio data in any candidate/part"
+        )
 
     # ------------------------------------------------------------------
     # FFmpeg concatenation

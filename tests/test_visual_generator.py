@@ -98,8 +98,8 @@ def three_segment_script() -> Script:
 
 
 @pytest.fixture()
-def empty_script() -> Script:
-    return Script(title="Empty", segments=[])
+def single_segment_script() -> Script:
+    return _make_script([("Host", "Single segment.", "Simple diagram")])
 
 
 @pytest.fixture()
@@ -137,10 +137,12 @@ class TestAPIKeyValidation:
 
 
 class TestEmptyScript:
-    def test_empty_script_returns_empty_list(self, generator, empty_script, tmp_path):
-        """Empty script should return an empty list of paths."""
-        result = asyncio.run(generator.generate(empty_script, tmp_path))
-        assert result == []
+    def test_empty_script_rejected_by_model(self):
+        """Empty script should be rejected at the model level."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            Script(title="Empty", segments=[])
 
 
 # ---------------------------------------------------------------------------

@@ -28,7 +28,6 @@ _SKIP_EXTENSIONS = frozenset(
         ".gif",
         ".bmp",
         ".ico",
-        ".svg",
         ".mp3",
         ".mp4",
         ".avi",
@@ -301,7 +300,9 @@ class ContentReader:
 
             # Apply include filter — use path-aware matching so that
             # patterns like "src/*.py" respect directory segments.
-            if include and not _matches_any(rel_path_str, include):
+            # Note: include=[] (empty list) means "include nothing",
+            # while include=None means "include everything".
+            if include is not None and not _matches_any(rel_path_str, include):
                 continue
 
             # Apply exclude filter

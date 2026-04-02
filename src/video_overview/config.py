@@ -30,7 +30,7 @@ class Script(BaseModel):
     """A complete script composed of ordered segments."""
 
     title: str = Field(min_length=1)
-    segments: list[ScriptSegment]
+    segments: list[ScriptSegment] = Field(min_length=1)
 
 
 class OverviewResult(BaseModel):
@@ -96,6 +96,20 @@ class OverviewConfig(BaseModel):
         """Raise if *path* exists and is not a directory."""
         if path.exists() and not path.is_dir():
             raise ValueError(f"cache_dir exists but is not a directory: {path}")
+
+    @model_validator(mode="after")
+    def _validate_output_format_match(self) -> OverviewConfig:
+        """Validate that output file extension matches the chosen format."""
+        suffix = self.output.suffix.lower()
+        if self.format == "video" and suffix not in (".mp4",):
+            raise ValueError(
+                f"Video format requires .mp4 output, got '{suffix}'"
+            )
+        if self.format == "audio" and suffix not in (".mp3", ".wav"):
+            raise ValueError(
+                f"Audio format requires .mp3 or .wav output, got '{suffix}'"
+            )
+        return self
 
     @model_validator(mode="after")
     def _set_cache_dir_default(self) -> OverviewConfig:

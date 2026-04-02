@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from video_overview.audio import AudioGenerationError, AudioGenerator
 from video_overview.config import Script, ScriptSegment
@@ -835,17 +836,10 @@ class TestModelName:
 
 
 class TestEmptyScript:
-    def test_empty_segments_raises_error(self, generator, tmp_path):
-        """Script with no segments should raise AudioGenerationError."""
-        script = Script(title="Empty", segments=[])
-        with pytest.raises(AudioGenerationError, match="at least one segment"):
-            generator.generate(
-                script=script,
-                host_voice="Aoede",
-                expert_voice="Charon",
-                narrator_voice="Kore",
-                cache_dir=tmp_path,
-            )
+    def test_empty_segments_rejected_by_model(self):
+        """Script with no segments should be rejected at the model level."""
+        with pytest.raises(ValidationError):
+            Script(title="Empty", segments=[])
 
 
 # ---------------------------------------------------------------------------
