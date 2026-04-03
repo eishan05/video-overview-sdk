@@ -193,6 +193,14 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         exclude=config.exclude,
     )
 
+    # ---- 3b. Fail fast on empty content ----
+    if content_bundle["total_files"] == 0:
+        raise ValueError(
+            f"No readable files found in {config.source_dir}. "
+            "The directory may be empty, contain only binary files, "
+            "or all files were excluded by filters."
+        )
+
     # ---- 4. Generate script ----
     _progress("Generating script...")
     script_gen = ScriptGenerator()

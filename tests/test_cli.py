@@ -632,6 +632,58 @@ class TestIncludePatternMatchesNothing:
         assert "*.go" in result.output
 
 
+class TestEmptySourceContentCLI:
+    """CLI should exit 1 with a clear message when source dir has no readable files."""
+
+    def test_empty_source_exits_with_error(self, runner, source_dir, output_file):
+        """Empty source content should exit 1 with a helpful error message."""
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=ValueError(
+                f"No readable files found in {source_dir}. "
+                "The directory may be empty, contain only binary files, "
+                "or all files were excluded by filters."
+            ),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert "no readable files" in result.output.lower()
+
+    def test_empty_source_error_mentions_directory(
+        self, runner, source_dir, output_file
+    ):
+        """Error output should mention the source directory path."""
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=ValueError(
+                f"No readable files found in {source_dir}. "
+                "The directory may be empty, contain only binary files, "
+                "or all files were excluded by filters."
+            ),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                ],
+            )
+        assert result.exit_code == 1
+        assert str(source_dir) in result.output
+
+
 class TestSkipVisualsOption:
     """Test --skip-visuals CLI flag."""
 
