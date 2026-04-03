@@ -43,6 +43,32 @@ class VideoAssembler:
                 "ffmpeg is not installed or not on PATH. "
                 "Install ffmpeg to use VideoAssembler."
             )
+
+        # Validate constructor arguments
+        if width <= 0:
+            raise VideoAssemblyError(f"width must be positive, got {width}")
+        if height <= 0:
+            raise VideoAssemblyError(f"height must be positive, got {height}")
+        if width % 2 != 0:
+            raise VideoAssemblyError(
+                f"width must be even for libx264 encoding, got {width}"
+            )
+        if height % 2 != 0:
+            raise VideoAssemblyError(
+                f"height must be even for libx264 encoding, got {height}"
+            )
+        if fps <= 0:
+            raise VideoAssemblyError(f"fps must be positive, got {fps}")
+        if crossfade_seconds < 0:
+            raise VideoAssemblyError(
+                f"crossfade_seconds must be non-negative, got {crossfade_seconds}"
+            )
+        if ken_burns_zoom_percent < 0:
+            raise VideoAssemblyError(
+                f"ken_burns_zoom_percent must be non-negative, "
+                f"got {ken_burns_zoom_percent}"
+            )
+
         self._width = width
         self._height = height
         self._fps = fps
@@ -292,7 +318,7 @@ class VideoAssembler:
                 f"force_original_aspect_ratio=decrease,"
                 f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
                 f"setsar=1,"
-                f"zoompan=z='min(zoom+{zoom_increment:.6f},{max_zoom})':"
+                f"zoompan=z='min(zoom+{zoom_increment:.12g},{max_zoom})':"
                 f"d={frames}:s={w}x{h}:fps={fps}"
                 f"[v{i}]"
             )

@@ -920,3 +920,94 @@ class TestConfigurableVideoConstants:
                 output_path=tmp_path / "out.mp4",
                 format="video",
             )
+
+
+# ---------------------------------------------------------------------------
+# Constructor validation
+# ---------------------------------------------------------------------------
+
+
+class TestConstructorValidation:
+    """VideoAssembler constructor should reject invalid parameters."""
+
+    def test_zero_width_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="width"):
+            VideoAssembler(width=0)
+
+    def test_negative_width_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="width"):
+            VideoAssembler(width=-1)
+
+    def test_odd_width_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="even"):
+            VideoAssembler(width=1279)
+
+    def test_odd_height_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="even"):
+            VideoAssembler(height=719)
+
+    def test_zero_fps_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="fps"):
+            VideoAssembler(fps=0)
+
+    def test_negative_crossfade_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="crossfade"):
+            VideoAssembler(crossfade_seconds=-1.0)
+
+    def test_negative_zoom_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="ken_burns"):
+            VideoAssembler(ken_burns_zoom_percent=-1.0)
+
+    def test_small_zoom_precision(self, mocker, audio_path, single_image, tmp_path):
+        """Very small non-zero zoom should not round to zero."""
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+        # 0.001% zoom over 5s at 30fps = 150 frames
+        # increment = 0.00001 / 150 = 6.67e-8
+        asm = VideoAssembler(ken_burns_zoom_percent=0.001)
+        asm.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.0],
+            output_path=tmp_path / "out.mp4",
+            format="video",
+        )
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        # The zoom increment should NOT be zero
+        assert "zoom+0," not in cmd_str
+        assert "zoom+0'" not in cmd_str

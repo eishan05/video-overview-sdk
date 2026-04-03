@@ -652,6 +652,28 @@ class TestOverviewConfigVideoConstants:
                 ken_burns_zoom_percent=-1.0,
             )
 
+    def test_odd_video_width_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError, match="even"):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                video_width=1279,
+            )
+
+    def test_odd_video_height_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError, match="even"):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                video_height=719,
+            )
+
     def test_zero_crossfade_accepted(self, tmp_path):
         """crossfade_seconds=0 should be valid (no crossfade)."""
         source = tmp_path / "src_dir"

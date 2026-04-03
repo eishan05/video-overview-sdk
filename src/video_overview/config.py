@@ -68,6 +68,15 @@ class OverviewConfig(BaseModel):
     crossfade_seconds: NonNegativeFloat = 0.5
     ken_burns_zoom_percent: NonNegativeFloat = 5.0
 
+    @field_validator("video_width", "video_height")
+    @classmethod
+    def _validate_even_dimensions(cls, v: int) -> int:
+        if v % 2 != 0:
+            raise ValueError(
+                f"Video dimensions must be even for libx264 encoding, got {v}"
+            )
+        return v
+
     @field_validator("source_dir")
     @classmethod
     def _validate_source_dir(cls, v: Path) -> Path:
