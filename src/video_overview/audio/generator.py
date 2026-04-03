@@ -19,8 +19,10 @@ from video_overview.duration import estimate_segment_duration
 logger = logging.getLogger(__name__)
 
 _MODEL = "gemini-2.5-flash-preview-tts"
-_BATCH_SIZE = 13  # Target ~10-15 segments per batch; TODO: also budget by token count
-_MAX_RETRIES = 3
+_DEFAULT_MAX_SEGMENTS_PER_BATCH = 13
+_DEFAULT_MAX_TOKENS_PER_BATCH = 8000
+_DEFAULT_MAX_RETRIES = 3
+_CHARS_PER_TOKEN = 4  # heuristic: 1 token ~ 4 characters
 _BASE_DELAY = 1  # seconds
 _CONVERSATION_SPEAKERS = {"Host", "Expert"}
 _NARRATION_SPEAKERS = {"Narrator"}
@@ -51,6 +53,9 @@ class AudioGenerator:
         expert_voice: str,
         narrator_voice: str,
         cache_dir: Path,
+        max_tokens_per_batch: int = _DEFAULT_MAX_TOKENS_PER_BATCH,
+        max_segments_per_batch: int = _DEFAULT_MAX_SEGMENTS_PER_BATCH,
+        max_retries: int = _DEFAULT_MAX_RETRIES,
     ) -> tuple[Path, list[float]]:
         """Generate audio from a script.
 
@@ -60,6 +65,11 @@ class AudioGenerator:
             expert_voice: Prebuilt voice ID for the Expert speaker.
             narrator_voice: Prebuilt voice ID for the Narrator speaker.
             cache_dir: Directory for intermediate and output files.
+            max_tokens_per_batch: Maximum estimated tokens per TTS batch.
+                Uses a heuristic of ~4 characters per token.
+            max_segments_per_batch: Maximum number of segments per TTS
+                batch (secondary guard).
+            max_retries: Maximum number of retry attempts for API calls.
 
         Returns:
             A tuple of (audio_path, segment_durations) where audio_path
@@ -107,15 +117,21 @@ class AudioGenerator:
             "Narrator": narrator_voice,
         }
 
-        # Chunk segments into batches
-        batches = self._chunk_segments(script.segments)
+        # Chunk segments into batches using both token budget and segment cap
+        batches = self._chunk_segments(
+            script.segments,
+            max_segments_per_batch=max_segments_per_batch,
+            max_tokens_per_batch=max_tokens_per_batch,
+        )
 
         # Generate audio for each batch
         chunk_paths: list[Path] = []
         for i, batch in enumerate(batches):
             prompt = self._build_prompt(batch)
             config = self._build_config(batch, is_multi_speaker, voice_map)
-            audio_bytes = self._call_api_with_retry(client, prompt, config)
+            audio_bytes = self._call_api_with_retry(
+                client, prompt, config, max_retries=max_retries
+            )
             chunk_path = cache_dir / f"chunk_{i:03d}.wav"
             chunk_path.write_bytes(audio_bytes)
             chunk_paths.append(chunk_path)
@@ -137,11 +153,56 @@ class AudioGenerator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _chunk_segments(segments: list, batch_size: int = _BATCH_SIZE) -> list[list]:
-        """Split segments into batches of approximately batch_size."""
-        batches = []
-        for i in range(0, len(segments), batch_size):
-            batches.append(segments[i : i + batch_size])
+    def _estimate_segment_tokens(segment) -> float:
+        """Estimate the token count for a segment's prompt contribution.
+
+        Uses the heuristic that 1 token is approximately 4 characters.
+        The prompt text for a segment is ``"Speaker: text"``.
+        """
+        prompt_text = f"{segment.speaker}: {segment.text}"
+        return len(prompt_text) / _CHARS_PER_TOKEN
+
+    @staticmethod
+    def _chunk_segments(
+        segments: list,
+        max_segments_per_batch: int = _DEFAULT_MAX_SEGMENTS_PER_BATCH,
+        max_tokens_per_batch: int = _DEFAULT_MAX_TOKENS_PER_BATCH,
+    ) -> list[list]:
+        """Split segments into batches respecting both token budget and segment cap.
+
+        Each batch accumulates segments until either the segment count
+        reaches *max_segments_per_batch* or the estimated token total
+        reaches *max_tokens_per_batch*.  A single segment that exceeds
+        the token budget is placed alone in its own batch (segments are
+        never split).
+        """
+        if not segments:
+            return []
+
+        batches: list[list] = []
+        current_batch: list = []
+        current_tokens: float = 0.0
+
+        for segment in segments:
+            seg_tokens = AudioGenerator._estimate_segment_tokens(segment)
+
+            # If the current batch is non-empty and adding this segment
+            # would exceed either limit, flush the current batch first.
+            if current_batch and (
+                len(current_batch) >= max_segments_per_batch
+                or current_tokens + seg_tokens > max_tokens_per_batch
+            ):
+                batches.append(current_batch)
+                current_batch = []
+                current_tokens = 0.0
+
+            current_batch.append(segment)
+            current_tokens += seg_tokens
+
+        # Don't forget the last batch
+        if current_batch:
+            batches.append(current_batch)
+
         return batches
 
     # ------------------------------------------------------------------
@@ -216,11 +277,19 @@ class AudioGenerator:
         client: genai.Client,
         prompt: str,
         config: types.GenerateContentConfig,
+        max_retries: int = _DEFAULT_MAX_RETRIES,
     ) -> bytes:
-        """Call the Gemini TTS API with exponential backoff retry."""
+        """Call the Gemini TTS API with exponential backoff retry.
+
+        Args:
+            client: The Gemini API client.
+            prompt: The TTS prompt text.
+            config: The GenerateContentConfig for the API call.
+            max_retries: Maximum number of attempts before giving up.
+        """
         last_error: Exception | None = None
 
-        for attempt in range(_MAX_RETRIES):
+        for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
                     model=_MODEL,
@@ -230,19 +299,19 @@ class AudioGenerator:
                 return self._extract_audio(response)
             except Exception as exc:
                 last_error = exc
-                if attempt < _MAX_RETRIES - 1:
+                if attempt < max_retries - 1:
                     delay = _BASE_DELAY * (2**attempt)
                     logger.warning(
                         "TTS API retry attempt %d/%d after error: %s (delay=%ds)",
                         attempt + 1,
-                        _MAX_RETRIES,
+                        max_retries,
                         exc,
                         delay,
                     )
                     time.sleep(delay)
 
         raise AudioGenerationError(
-            f"API call failed after {_MAX_RETRIES} attempts: {last_error}"
+            f"API call failed after {max_retries} attempts: {last_error}"
         )
 
     # ------------------------------------------------------------------

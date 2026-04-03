@@ -237,7 +237,7 @@ class TestSegmentChunking:
     def test_25_segments_creates_two_batches(
         self, generator, large_script, tmp_path, mocker
     ):
-        """25 segments should be split into 2 batches (e.g., 13+12 or 15+10)."""
+        """25 segments should be split into 2 batches with default config."""
         wav_data = _make_wav_bytes()
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = _mock_response(wav_data)
@@ -285,6 +285,181 @@ class TestSegmentChunking:
         )
 
         assert mock_client.models.generate_content.call_count == 1
+
+    def test_custom_max_segments_per_batch(
+        self, generator, large_script, tmp_path, mocker
+    ):
+        """Custom max_segments_per_batch should control batch splitting."""
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # 25 segments with batch size 5 => 5 batches
+        generator.generate(
+            script=large_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            max_segments_per_batch=5,
+        )
+
+        assert mock_client.models.generate_content.call_count == 5
+
+    def test_custom_max_tokens_per_batch_splits_more(self, generator, tmp_path, mocker):
+        """A low token budget should force more batches even with few segments."""
+        # Each segment text is ~40 chars => ~10 tokens. With prefix "Host: " (6 chars)
+        # total ~46 chars => ~12 tokens per segment.
+        # With max_tokens_per_batch=20, at most ~1-2 segments per batch.
+        segments = [
+            ("Host", "This is segment number one with text."),
+            ("Expert", "This is segment number two with text."),
+            ("Host", "This is segment number three here now."),
+            ("Expert", "This is segment number four with text."),
+        ]
+        script = _make_script(segments)
+
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # Very low token budget forces each segment into its own batch
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            max_tokens_per_batch=5,
+        )
+
+        # Each segment should be in its own batch
+        assert mock_client.models.generate_content.call_count == 4
+
+    def test_token_budget_takes_precedence_over_segment_limit(
+        self, generator, tmp_path, mocker
+    ):
+        """Token budget should split batches even when segment count allows grouping."""
+        # 4 segments with high segment limit but low token budget
+        segments = [
+            ("Narrator", "A" * 400),  # 400 chars => 100 tokens
+            ("Narrator", "B" * 400),  # 400 chars => 100 tokens
+            ("Narrator", "C" * 400),
+            ("Narrator", "D" * 400),
+        ]
+        script = _make_script(segments)
+
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # Segment limit is high (100) but token budget is low (150 tokens)
+        # Each segment is ~100 tokens, so only 1 fits per batch
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            max_segments_per_batch=100,
+            max_tokens_per_batch=150,
+        )
+
+        assert mock_client.models.generate_content.call_count == 4
+
+    def test_segment_limit_takes_precedence_over_token_budget(
+        self, generator, tmp_path, mocker
+    ):
+        """Segment count limit should split batches even with high token budget."""
+        # 4 short segments with low segment limit but high token budget
+        segments = [
+            ("Narrator", "Hi."),
+            ("Narrator", "OK."),
+            ("Narrator", "Yo."),
+            ("Narrator", "Go."),
+        ]
+        script = _make_script(segments)
+
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # Token budget is huge but only 2 segments per batch
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            max_segments_per_batch=2,
+            max_tokens_per_batch=999999,
+        )
+
+        assert mock_client.models.generate_content.call_count == 2
+
+    def test_oversized_segment_gets_own_batch(self, generator, tmp_path, mocker):
+        """A segment exceeding token budget still gets its own batch."""
+        segments = [
+            ("Narrator", "A" * 4000),  # 4000 chars => 1000 tokens, exceeds budget
+            ("Narrator", "Short."),
+        ]
+        script = _make_script(segments)
+
+        wav_data = _make_wav_bytes()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            max_tokens_per_batch=100,
+        )
+
+        # 2 batches: oversized segment alone, then the short one
+        assert mock_client.models.generate_content.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +757,55 @@ class TestRetryLogic:
                 cache_dir=tmp_path,
             )
 
-        # Should have tried 3 times
+        # Should have tried 3 times (default)
         assert mock_client.models.generate_content.call_count == 3
+
+    def test_custom_max_retries(self, generator, narration_script, tmp_path, mocker):
+        """Custom max_retries should control retry count."""
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception(
+            "API permanently down"
+        )
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch("video_overview.audio.generator.time.sleep")
+
+        with pytest.raises(AudioGenerationError, match="5 attempts"):
+            generator.generate(
+                script=narration_script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+                max_retries=5,
+            )
+
+        assert mock_client.models.generate_content.call_count == 5
+
+    def test_single_retry(self, generator, narration_script, tmp_path, mocker):
+        """max_retries=1 should try exactly once with no sleep."""
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("fail")
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mock_sleep = mocker.patch("video_overview.audio.generator.time.sleep")
+
+        with pytest.raises(AudioGenerationError, match="1 attempts"):
+            generator.generate(
+                script=narration_script,
+                host_voice="Aoede",
+                expert_voice="Charon",
+                narrator_voice="Kore",
+                cache_dir=tmp_path,
+                max_retries=1,
+            )
+
+        assert mock_client.models.generate_content.call_count == 1
+        mock_sleep.assert_not_called()
 
     def test_exponential_backoff_delays(
         self, generator, narration_script, tmp_path, mocker
@@ -969,3 +1191,113 @@ class TestFFmpegErrors:
                 narrator_voice="Kore",
                 cache_dir=tmp_path,
             )
+
+
+# ---------------------------------------------------------------------------
+# Token-budget-aware _chunk_segments unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestChunkSegmentsUnit:
+    """Direct unit tests for _chunk_segments static method."""
+
+    def test_default_params_match_legacy_behaviour(self):
+        """With default params, 25 segments should produce 2 batches (13+12)."""
+        segments = [
+            ScriptSegment(speaker="Host", text=f"Seg {i}", visual_prompt=f"Visual {i}")
+            for i in range(25)
+        ]
+        batches = AudioGenerator._chunk_segments(segments)
+        assert len(batches) == 2
+        assert len(batches[0]) == 13
+        assert len(batches[1]) == 12
+
+    def test_token_budget_creates_smaller_batches(self):
+        """Low token budget should produce more batches."""
+        # Each segment: "Host: " (6 chars) + "Hello world" (11 chars) = 17 chars
+        # => ~4.25 tokens per segment
+        segments = [
+            ScriptSegment(speaker="Host", text="Hello world", visual_prompt="v")
+            for _ in range(4)
+        ]
+        # Token budget of 5 => only 1 segment fits per batch
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=100, max_tokens_per_batch=5
+        )
+        assert len(batches) == 4
+        assert all(len(b) == 1 for b in batches)
+
+    def test_segment_limit_creates_smaller_batches(self):
+        """Low segment limit should produce more batches."""
+        segments = [
+            ScriptSegment(speaker="Host", text="Hi", visual_prompt="v")
+            for _ in range(10)
+        ]
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=3, max_tokens_per_batch=999999
+        )
+        assert len(batches) == 4  # 3 + 3 + 3 + 1
+        assert len(batches[0]) == 3
+        assert len(batches[-1]) == 1
+
+    def test_oversized_single_segment_gets_own_batch(self):
+        """A segment exceeding the token budget should be alone in its batch."""
+        segments = [
+            ScriptSegment(
+                speaker="Narrator", text="A" * 4000, visual_prompt="v"
+            ),  # ~1000+ tokens
+            ScriptSegment(speaker="Narrator", text="Short.", visual_prompt="v"),
+        ]
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=100, max_tokens_per_batch=50
+        )
+        assert len(batches) == 2
+        assert len(batches[0]) == 1
+        assert len(batches[1]) == 1
+
+    def test_exact_budget_boundary(self):
+        """Segments that exactly fill the budget should be in one batch."""
+        # "Host: " + "AAAA" = 10 chars => 2.5 tokens
+        segments = [
+            ScriptSegment(speaker="Host", text="AAAA", visual_prompt="v"),
+            ScriptSegment(speaker="Host", text="BBBB", visual_prompt="v"),
+        ]
+        # 2 segments each ~2.5 tokens = ~5 tokens total
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=100, max_tokens_per_batch=5
+        )
+        assert len(batches) == 1
+
+    def test_empty_segments_returns_empty(self):
+        """Empty input should return empty list."""
+        batches = AudioGenerator._chunk_segments([])
+        assert batches == []
+
+    def test_chars_per_token_heuristic(self):
+        """Verify the 4-chars-per-token heuristic is applied correctly."""
+        # "Narrator: " = 10 chars, text = "A" * 80 = 80 chars
+        # Total prompt text for segment = 90 chars => 22.5 tokens
+        segments = [
+            ScriptSegment(speaker="Narrator", text="A" * 80, visual_prompt="v"),
+            ScriptSegment(speaker="Narrator", text="B" * 80, visual_prompt="v"),
+            ScriptSegment(speaker="Narrator", text="C" * 80, visual_prompt="v"),
+        ]
+        # Budget of 45 tokens allows 2 segments (~22.5 each), third goes to next batch
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=100, max_tokens_per_batch=45
+        )
+        assert len(batches) == 2
+        assert len(batches[0]) == 2
+        assert len(batches[1]) == 1
+
+    def test_all_segments_preserved(self):
+        """All input segments should appear in output batches."""
+        segments = [
+            ScriptSegment(speaker="Host", text=f"Seg {i}", visual_prompt=f"Visual {i}")
+            for i in range(17)
+        ]
+        batches = AudioGenerator._chunk_segments(
+            segments, max_segments_per_batch=5, max_tokens_per_batch=999999
+        )
+        total = sum(len(b) for b in batches)
+        assert total == 17

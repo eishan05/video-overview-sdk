@@ -353,6 +353,84 @@ class TestOverviewConfigLiteralValidation:
 
 
 # ---------------------------------------------------------------------------
+# OverviewConfig – audio batching and retry fields
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewConfigAudioBatchingFields:
+    """Tests for max_tokens_per_batch, max_segments_per_batch, audio_max_retries."""
+
+    def test_defaults(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source, output=tmp_path / "out.mp4", topic="Test"
+        )
+        assert cfg.max_tokens_per_batch == 8000
+        assert cfg.max_segments_per_batch == 13
+        assert cfg.audio_max_retries == 3
+
+    def test_custom_values(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            max_tokens_per_batch=2000,
+            max_segments_per_batch=5,
+            audio_max_retries=7,
+        )
+        assert cfg.max_tokens_per_batch == 2000
+        assert cfg.max_segments_per_batch == 5
+        assert cfg.audio_max_retries == 7
+
+    def test_zero_max_tokens_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                max_tokens_per_batch=0,
+            )
+
+    def test_zero_max_segments_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                max_segments_per_batch=0,
+            )
+
+    def test_zero_max_retries_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                audio_max_retries=0,
+            )
+
+    def test_negative_values_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                max_tokens_per_batch=-1,
+            )
+
+
+# ---------------------------------------------------------------------------
 # OverviewConfig – GEMINI_API_KEY / GOOGLE_API_KEY env var loading
 # ---------------------------------------------------------------------------
 
