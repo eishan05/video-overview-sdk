@@ -168,9 +168,7 @@ class TestContentReaderLogging:
         gitignore.write_text("\\")
         (tmp_path / "main.py").write_text("x = 1")
 
-        with caplog.at_level(
-            logging.WARNING, logger="video_overview.content.reader"
-        ):
+        with caplog.at_level(logging.WARNING, logger="video_overview.content.reader"):
             result = ContentReader().read(tmp_path)
 
         # Should not crash, and should still read files

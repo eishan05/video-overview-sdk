@@ -150,9 +150,7 @@ def main(
     if not root.handlers:
         # No handlers yet — add a default stderr handler.
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(
-            logging.Formatter("%(name)s: %(levelname)s: %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(name)s: %(levelname)s: %(message)s"))
         root.addHandler(handler)
     # Always set the effective level so --verbose takes effect
     # even when the embedding process pre-configured logging.
