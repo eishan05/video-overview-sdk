@@ -19,10 +19,17 @@ def estimate_segment_duration(text: str) -> float:
     return max(_MIN_DURATION, len(text) / _CHARS_PER_SECOND)
 
 
-# Average speaking rate: ~150 words per minute
-_WORDS_PER_MINUTE = 150
+# Average characters per word in running text (word + trailing space).
+# This is deliberately aligned with _CHARS_PER_SECOND so the prompt
+# budget and the post-generation truncation use the same underlying
+# rate model: 12.5 chars/sec ÷ 6 chars/word ≈ 125 words/min.
+_CHARS_PER_WORD_IN_TEXT = 6
 
-# Approximate average words per segment (assuming ~30s per segment)
+# Derived speaking rate in words per minute, consistent with the
+# character-based estimator used by estimate_segment_duration().
+_WORDS_PER_MINUTE = _CHARS_PER_SECOND * 60.0 / _CHARS_PER_WORD_IN_TEXT
+
+# Approximate average duration per segment (seconds)
 _SECONDS_PER_SEGMENT = 30
 
 
@@ -31,6 +38,11 @@ def compute_duration_budget(
     max_segments_cap: int = 20,
 ) -> dict | None:
     """Derive an approximate word and segment budget from a duration limit.
+
+    The word budget is derived from the same character-based speaking
+    rate used by :func:`estimate_segment_duration` so that a script
+    meeting the advertised budget is unlikely to be truncated
+    afterwards.
 
     Args:
         max_duration_minutes: Target maximum duration in minutes.

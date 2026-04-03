@@ -704,8 +704,8 @@ class TestDurationBudgetInPrompt:
             max_duration_minutes=5,
         )
         prompt = mock_run.call_args[0][0][2]
-        # 5 minutes * 150 wpm = 750 words
-        assert "750" in prompt
+        # 5 minutes * 125 wpm = 625 words
+        assert "625" in prompt
         assert "word" in prompt.lower()
 
     def test_budget_target_duration_in_prompt(
@@ -784,14 +784,14 @@ class TestDurationBudgetInPrompt:
         )
         prompt = mock_run.call_args[0][0][2]
         # The max_segments in the prompt should be capped by the budget
-        # Budget for 1 min: 150 words, ~2-3 segments
+        # Budget for 1 min: 125 words, 2 segments
         # The prompt should NOT say "Maximum 20 segments"
         assert "Maximum 20 segments" not in prompt
 
     def test_10_minute_budget_word_count(
         self, generator, sample_content_bundle, valid_conversation_response, mocker
     ):
-        """10 minutes => 1500 words in prompt."""
+        """10 minutes => 1250 words in prompt."""
         mock_run = mocker.patch(
             "video_overview.script.generator.subprocess.run",
             return_value=_make_subprocess_result(valid_conversation_response),
@@ -804,4 +804,30 @@ class TestDurationBudgetInPrompt:
             max_duration_minutes=10,
         )
         prompt = mock_run.call_args[0][0][2]
-        assert "1500" in prompt
+        assert "1250" in prompt
+
+    def test_invalid_max_duration_raises_script_error(
+        self, generator, sample_content_bundle
+    ):
+        """Zero/negative max_duration_minutes raises ScriptGenerationError."""
+        with pytest.raises(ScriptGenerationError, match="positive"):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+                max_duration_minutes=0,
+            )
+
+    def test_negative_max_duration_raises_script_error(
+        self, generator, sample_content_bundle
+    ):
+        """Negative max_duration_minutes raises ScriptGenerationError."""
+        with pytest.raises(ScriptGenerationError, match="positive"):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+                max_duration_minutes=-5,
+            )

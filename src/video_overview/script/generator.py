@@ -62,9 +62,12 @@ class ScriptGenerator:
             )
 
         # Derive a duration budget and tighten max_segments if needed
-        budget = compute_duration_budget(
-            max_duration_minutes, max_segments_cap=max_segments
-        )
+        try:
+            budget = compute_duration_budget(
+                max_duration_minutes, max_segments_cap=max_segments
+            )
+        except ValueError as exc:
+            raise ScriptGenerationError(str(exc)) from exc
         if budget is not None:
             max_segments = budget["max_segments"]
 
