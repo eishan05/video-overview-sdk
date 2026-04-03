@@ -722,6 +722,72 @@ class TestOverviewConfigVideoConstants:
 
 
 # ---------------------------------------------------------------------------
+# OverviewConfig – skip_visuals
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewConfigSkipVisuals:
+    """Tests for skip_visuals field and validation."""
+
+    def test_skip_visuals_defaults_to_false(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source, output=tmp_path / "out.mp4", topic="Test"
+        )
+        assert cfg.skip_visuals is False
+
+    def test_skip_visuals_true_accepted_for_video_format(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            format="video",
+            skip_visuals=True,
+        )
+        assert cfg.skip_visuals is True
+        assert cfg.format == "video"
+
+    def test_skip_visuals_false_accepted_for_audio_format(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp3",
+            topic="Test",
+            format="audio",
+            skip_visuals=False,
+        )
+        assert cfg.skip_visuals is False
+
+    def test_skip_visuals_true_rejected_for_audio_format(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError, match="skip_visuals"):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp3",
+                topic="Test",
+                format="audio",
+                skip_visuals=True,
+            )
+
+    def test_skip_visuals_false_accepted_for_video_format(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            format="video",
+            skip_visuals=False,
+        )
+        assert cfg.skip_visuals is False
+
+
+# ---------------------------------------------------------------------------
 # Exports from top-level package
 # ---------------------------------------------------------------------------
 

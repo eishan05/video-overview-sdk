@@ -883,6 +883,191 @@ class TestMaxDurationTruncation:
 
 
 # ---------------------------------------------------------------------------
+# Tests: skip_visuals mode
+# ---------------------------------------------------------------------------
+
+
+class TestSkipVisualsMode:
+    """When skip_visuals=True, visual generation is skipped and a static
+    dark frame is synthesised locally."""
+
+    def test_skips_visual_generator(self, tmp_source, all_mocks):
+        """VisualGenerator should not be called when skip_visuals=True."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        # The static frame generator needs to return a valid path
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            create_overview(config=config)
+
+        all_mocks["visual_inst"].generate.assert_not_called()
+
+    def test_creates_static_frame(self, tmp_source, all_mocks):
+        """A static dark frame should be created when skip_visuals=True."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            create_overview(config=config)
+
+        mock_frame.assert_called_once()
+
+    def test_static_frame_passed_to_assembler(self, tmp_source, all_mocks):
+        """The assembler should receive one static frame replicated for
+        each segment."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        frame_path = Path("/tmp/cache/static_frame.png")
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = frame_path
+            create_overview(config=config)
+
+        call_kwargs = all_mocks["assembler_inst"].assemble.call_args
+        image_paths = call_kwargs.kwargs.get("image_paths") or call_kwargs.args[1]
+        # One static frame per segment (3 segments from _make_script)
+        assert len(image_paths) == 3
+        assert all(p == frame_path for p in image_paths)
+
+    def test_returns_overview_result(self, tmp_source, all_mocks):
+        """skip_visuals pipeline should still return a valid result."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            result = create_overview(config=config)
+
+        assert isinstance(result, OverviewResult)
+
+    def test_still_generates_audio(self, tmp_source, all_mocks):
+        """Audio generation should still occur when skip_visuals=True."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            create_overview(config=config)
+
+        all_mocks["audio_inst"].generate.assert_called_once()
+
+    def test_progress_message_mentions_skip(self, tmp_source, all_mocks, capsys):
+        """Progress should indicate visuals are being skipped."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", skip_visuals=True)
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            create_overview(config=config)
+
+        captured = capsys.readouterr()
+        stderr = captured.err.lower()
+        assert "skip" in stderr or "static" in stderr
+
+
+class TestCreateStaticFrame:
+    """Tests for the _create_static_frame helper."""
+
+    def test_creates_png_file(self, tmp_path):
+        """The helper should produce a PNG file via ffmpeg (mocked)."""
+        from video_overview.core import _create_static_frame
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            frame_path = _create_static_frame(
+                cache_dir=tmp_path,
+                width=1920,
+                height=1080,
+            )
+        assert frame_path.suffix == ".png"
+        assert frame_path.parent == tmp_path
+
+    def test_ffmpeg_called_with_correct_dimensions(self, tmp_path):
+        """The ffmpeg command should use the requested width and height."""
+        from video_overview.core import _create_static_frame
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch(
+            "video_overview.core.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            _create_static_frame(cache_dir=tmp_path, width=1280, height=720)
+
+        cmd = mock_run.call_args[0][0]
+        # The lavfi color source should contain the dimensions
+        color_arg = [a for a in cmd if "color=" in a][0]
+        assert "1280x720" in color_arg
+
+    def test_reuses_cached_frame(self, tmp_path):
+        """If the frame already exists, ffmpeg should not be called again."""
+        from video_overview.core import _create_static_frame
+
+        # Pre-create the cache file
+        expected = tmp_path / "static_frame_1920x1080.png"
+        expected.write_bytes(b"fake png")
+
+        with patch("video_overview.core.subprocess.run") as mock_run:
+            frame_path = _create_static_frame(
+                cache_dir=tmp_path, width=1920, height=1080
+            )
+        mock_run.assert_not_called()
+        assert frame_path == expected
+
+    def test_frame_dimensions_in_filename(self, tmp_path):
+        """Frame filename should encode the dimensions for cache correctness."""
+        from video_overview.core import _create_static_frame
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            frame_path = _create_static_frame(
+                cache_dir=tmp_path, width=1280, height=720
+            )
+        assert "1280x720" in frame_path.name
+
+    def test_ffmpeg_not_found_raises_video_assembly_error(self, tmp_path):
+        """FileNotFoundError from ffmpeg should raise VideoAssemblyError."""
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        with patch(
+            "video_overview.core.subprocess.run",
+            side_effect=FileNotFoundError("ffmpeg not found"),
+        ):
+            with pytest.raises(VideoAssemblyError, match="ffmpeg"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
+
+    def test_ffmpeg_timeout_raises_video_assembly_error(self, tmp_path):
+        """TimeoutExpired from ffmpeg should raise VideoAssemblyError."""
+        import subprocess
+
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        with patch(
+            "video_overview.core.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=30),
+        ):
+            with pytest.raises(VideoAssemblyError, match="timed out"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
+
+    def test_ffmpeg_nonzero_exit_raises_video_assembly_error(self, tmp_path):
+        """Non-zero ffmpeg exit code should raise VideoAssemblyError."""
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "some error"
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            with pytest.raises(VideoAssemblyError, match="ffmpeg failed"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
+
+
+# ---------------------------------------------------------------------------
 # Tests: VideoAssembler receives video config from OverviewConfig
 # ---------------------------------------------------------------------------
 

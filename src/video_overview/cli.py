@@ -120,6 +120,12 @@ def _validate_output_parent(
     help="Maximum duration in minutes.",
 )
 @click.option(
+    "--skip-visuals",
+    is_flag=True,
+    default=False,
+    help="Skip Gemini image generation; use a static dark frame (video format only).",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -139,6 +145,7 @@ def main(
     narrator_voice: str,
     llm: str,
     max_duration: int,
+    skip_visuals: bool,
     verbose: bool,
 ) -> None:
     """Generate a video or audio overview from source content."""
@@ -170,6 +177,7 @@ def main(
             narrator_voice=narrator_voice,
             llm_backend=llm,
             max_duration_minutes=max_duration,
+            skip_visuals=skip_visuals,
         )
         result = create_overview(config=config)
         click.echo(
