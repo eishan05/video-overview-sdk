@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import logging
 import shutil
 import subprocess
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -26,6 +29,7 @@ _CHARS_PER_TOKEN = 4  # heuristic: 1 token ~ 4 characters
 _BASE_DELAY = 1  # seconds
 _CONVERSATION_SPEAKERS = {"Host", "Expert"}
 _NARRATION_SPEAKERS = {"Narrator"}
+_CACHE_SCHEMA_VERSION = 1  # bump when cache key semantics change
 
 
 class AudioGenerationError(Exception):
@@ -136,16 +140,35 @@ class AudioGenerator:
             max_tokens_per_batch=max_tokens_per_batch,
         )
 
-        # Generate audio for each batch
+        # Generate audio for each batch (with content-addressed caching)
         chunk_paths: list[Path] = []
-        for i, batch in enumerate(batches):
-            prompt = self._build_prompt(batch)
-            config = self._build_config(batch, is_multi_speaker, voice_map)
-            audio_bytes = self._call_api_with_retry(
-                client, prompt, config, max_attempts=max_attempts
-            )
-            chunk_path = cache_dir / f"chunk_{i:03d}.wav"
-            chunk_path.write_bytes(audio_bytes)
+        for batch in batches:
+            cache_key = self._batch_cache_key(batch, is_multi_speaker, voice_map)
+            chunk_path = cache_dir / f"audio_{cache_key}.wav"
+
+            if chunk_path.exists() and self._is_valid_wav(chunk_path):
+                logger.info("Audio cache hit for batch: %s", cache_key)
+            else:
+                if chunk_path.exists():
+                    logger.warning("Corrupt cache file removed: %s", chunk_path)
+                    chunk_path.unlink()
+                logger.info("Audio cache miss for batch: %s", cache_key)
+                prompt = self._build_prompt(batch)
+                config = self._build_config(batch, is_multi_speaker, voice_map)
+                audio_bytes = self._call_api_with_retry(
+                    client, prompt, config, max_attempts=max_attempts
+                )
+                # Atomic write: write to temp file then rename into place
+                # to prevent corrupt cache entries from interrupted writes.
+                fd, tmp_name = tempfile.mkstemp(suffix=".wav", dir=cache_dir)
+                try:
+                    with open(fd, "wb") as tmp_file:
+                        tmp_file.write(audio_bytes)
+                    Path(tmp_name).replace(chunk_path)
+                except BaseException:
+                    Path(tmp_name).unlink(missing_ok=True)
+                    raise
+
             chunk_paths.append(chunk_path)
 
         # Concatenate or copy final output
@@ -159,6 +182,59 @@ class AudioGenerator:
         durations = self._estimate_durations(script.segments)
 
         return output_path, durations
+
+    # ------------------------------------------------------------------
+    # Cache validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_valid_wav(path: Path) -> bool:
+        """Return True if *path* is a readable, non-empty WAV file."""
+        try:
+            with wave.open(str(path), "rb") as wf:
+                return wf.getnframes() > 0
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Cache key computation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _batch_cache_key(
+        segments: list,
+        is_multi_speaker: bool,
+        voice_map: dict[str, str],
+    ) -> str:
+        """Compute a deterministic cache key for a batch of segments.
+
+        The key is an MD5 hex digest derived from:
+        - The TTS model name
+        - A cache schema version (bumped on key-format changes)
+        - The text and speaker of each segment (ordered)
+        - The voice assigned to each speaker present in the batch
+        - Whether multi-speaker mode is active
+
+        This ensures that identical segment text with different voice
+        configurations, speaker modes, or model versions produces
+        distinct cache keys.
+        """
+        batch_speakers = sorted({seg.speaker for seg in segments})
+        # Build a canonical representation of all TTS-request inputs
+        canonical = json.dumps(
+            {
+                "model": _MODEL,
+                "cache_schema": _CACHE_SCHEMA_VERSION,
+                "segments": [
+                    {"speaker": seg.speaker, "text": seg.text} for seg in segments
+                ],
+                "voices": {s: voice_map.get(s, "Kore") for s in batch_speakers},
+                "multi_speaker": is_multi_speaker,
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        return hashlib.md5(canonical.encode()).hexdigest()
 
     # ------------------------------------------------------------------
     # Chunking

@@ -593,8 +593,8 @@ class TestPCMToWAV:
             cache_dir=tmp_path,
         )
 
-        # Verify the chunk files are valid WAV
-        chunk_files = list(tmp_path.glob("chunk_*.wav"))
+        # Verify the chunk files are valid WAV (content-addressed names)
+        chunk_files = list(tmp_path.glob("audio_*.wav"))
         assert len(chunk_files) >= 1
         for chunk_file in chunk_files:
             with wave.open(str(chunk_file), "rb") as wf:
@@ -626,7 +626,7 @@ class TestPCMToWAV:
             cache_dir=tmp_path,
         )
 
-        chunk_files = list(tmp_path.glob("chunk_*.wav"))
+        chunk_files = list(tmp_path.glob("audio_*.wav"))
         assert len(chunk_files) >= 1
         # The chunk file should be valid WAV
         for chunk_file in chunk_files:
@@ -1301,3 +1301,369 @@ class TestChunkSegmentsUnit:
         )
         total = sum(len(b) for b in batches)
         assert total == 17
+
+
+# ---------------------------------------------------------------------------
+# Content-addressed audio caching
+# ---------------------------------------------------------------------------
+
+
+class TestBatchCacheKey:
+    """Unit tests for _batch_cache_key determinism and uniqueness."""
+
+    def test_deterministic_for_same_inputs(self):
+        """Same prompt + voice config should always produce the same key."""
+        segments = [
+            ScriptSegment(speaker="Narrator", text="Hello world", visual_prompt="v"),
+        ]
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        key1 = AudioGenerator._batch_cache_key(segments, False, voice_map)
+        key2 = AudioGenerator._batch_cache_key(segments, False, voice_map)
+        assert key1 == key2
+
+    def test_different_text_produces_different_key(self):
+        """Different segment text should produce a different cache key."""
+        seg_a = [
+            ScriptSegment(speaker="Narrator", text="Hello world", visual_prompt="v"),
+        ]
+        seg_b = [
+            ScriptSegment(speaker="Narrator", text="Goodbye world", visual_prompt="v"),
+        ]
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        key_a = AudioGenerator._batch_cache_key(seg_a, False, voice_map)
+        key_b = AudioGenerator._batch_cache_key(seg_b, False, voice_map)
+        assert key_a != key_b
+
+    def test_different_voice_produces_different_key(self):
+        """Different voice config should produce a different cache key."""
+        segments = [
+            ScriptSegment(speaker="Narrator", text="Hello world", visual_prompt="v"),
+        ]
+        voice_map_a = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        voice_map_b = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Puck"}
+        key_a = AudioGenerator._batch_cache_key(segments, False, voice_map_a)
+        key_b = AudioGenerator._batch_cache_key(segments, False, voice_map_b)
+        assert key_a != key_b
+
+    def test_different_multi_speaker_flag_produces_different_key(self):
+        """Multi-speaker vs single-speaker should produce different keys."""
+        segments = [
+            ScriptSegment(speaker="Host", text="Hello", visual_prompt="v"),
+            ScriptSegment(speaker="Expert", text="Hi", visual_prompt="v"),
+        ]
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        key_single = AudioGenerator._batch_cache_key(segments, False, voice_map)
+        key_multi = AudioGenerator._batch_cache_key(segments, True, voice_map)
+        assert key_single != key_multi
+
+    def test_key_is_hex_string(self):
+        """Cache key should be a hex digest string."""
+        segments = [
+            ScriptSegment(speaker="Narrator", text="Hello world", visual_prompt="v"),
+        ]
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        key = AudioGenerator._batch_cache_key(segments, False, voice_map)
+        assert isinstance(key, str)
+        assert len(key) == 32  # MD5 hex digest length
+        # Verify it's valid hex
+        int(key, 16)
+
+
+class TestAudioCacheHit:
+    """Tests that cached audio files skip TTS API calls."""
+
+    def test_cache_hit_skips_api_call(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """When all batch cache files already exist, API should not be called."""
+        wav_data = _make_wav_bytes()
+
+        # Pre-populate cache: compute what the cache keys will be
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(wav_data)
+
+        mock_client = MagicMock()
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, durations = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should NOT have been called
+        mock_client.models.generate_content.assert_not_called()
+        assert audio_path.exists()
+        assert len(durations) == len(narration_script.segments)
+
+    def test_cache_hit_partial_only_calls_api_for_uncached(
+        self, generator, tmp_path, mocker
+    ):
+        """Partial cache: only uncached batches call the API."""
+        # Create a script with enough segments for 2 batches
+        segments = []
+        for i in range(20):
+            segments.append(("Host" if i % 2 == 0 else "Expert", f"Segment {i} text."))
+        script = _make_script(segments)
+
+        wav_data = _make_wav_bytes()
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(script.segments)
+        assert len(batches) >= 2, "Need at least 2 batches for this test"
+
+        # Pre-populate only the first batch's cache
+        first_key = AudioGenerator._batch_cache_key(batches[0], True, voice_map)
+        cache_file = tmp_path / f"audio_{first_key}.wav"
+        cache_file.write_bytes(wav_data)
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        generator.generate(
+            script=script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should only be called for uncached batches (total - 1)
+        expected_api_calls = len(batches) - 1
+        assert mock_client.models.generate_content.call_count == expected_api_calls
+
+
+class TestAudioCacheMiss:
+    """Tests that uncached audio triggers TTS API and writes cache files."""
+
+    def test_cache_miss_calls_api_and_writes_cache(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """When no cached files exist, API should be called and cache files written."""
+        wav_data = _make_wav_bytes()
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, durations = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should have been called at least once
+        assert mock_client.models.generate_content.call_count >= 1
+        assert audio_path.exists()
+
+        # Cache files should have been written with content-addressed names
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            assert cache_file.exists(), f"Expected cache file {cache_file} to exist"
+
+    def test_second_run_is_fully_cached(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """Running generate twice should only call API on the first run."""
+        wav_data = _make_wav_bytes()
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # First run: fills the cache
+        generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+        first_run_calls = mock_client.models.generate_content.call_count
+        assert first_run_calls >= 1
+
+        # Second run: should hit cache completely
+        generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+        second_run_calls = (
+            mock_client.models.generate_content.call_count - first_run_calls
+        )
+        assert second_run_calls == 0
+
+
+class TestAudioCacheCorruptRecovery:
+    """Tests that corrupt cached files are regenerated."""
+
+    def test_corrupt_cache_file_triggers_regeneration(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """A corrupt (truncated) cache file should be replaced."""
+        wav_data = _make_wav_bytes()
+        voice_map = {
+            "Host": "Aoede",
+            "Expert": "Charon",
+            "Narrator": "Kore",
+        }
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+
+        # Write corrupt data to the cache file
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(b"NOT_A_WAV")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, _ = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should have been called (cache was corrupt)
+        assert mock_client.models.generate_content.call_count >= 1
+        assert audio_path.exists()
+
+    def test_empty_cache_file_triggers_regeneration(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """A zero-byte cache file should be replaced."""
+        wav_data = _make_wav_bytes()
+        voice_map = {
+            "Host": "Aoede",
+            "Expert": "Charon",
+            "Narrator": "Kore",
+        }
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+
+        # Write empty files to the cache
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(b"")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, _ = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should have been called (empty file is invalid)
+        assert mock_client.models.generate_content.call_count >= 1
+        assert audio_path.exists()
+
+
+class TestAudioCacheModelInvalidation:
+    """Tests that model or schema changes invalidate the cache."""
+
+    def test_model_change_produces_different_key(self, mocker):
+        """Changing _MODEL should produce a different cache key."""
+        segments = [
+            ScriptSegment(speaker="Narrator", text="Hello", visual_prompt="v"),
+        ]
+        voice_map = {
+            "Host": "Aoede",
+            "Expert": "Charon",
+            "Narrator": "Kore",
+        }
+
+        key_original = AudioGenerator._batch_cache_key(segments, False, voice_map)
+
+        # Patch the model constant to simulate a model upgrade
+        mocker.patch(
+            "video_overview.audio.generator._MODEL",
+            "gemini-3.0-flash-tts",
+        )
+        key_new_model = AudioGenerator._batch_cache_key(segments, False, voice_map)
+
+        assert key_original != key_new_model
+
+    def test_schema_version_change_produces_different_key(self, mocker):
+        """Bumping _CACHE_SCHEMA_VERSION produces a different key."""
+        segments = [
+            ScriptSegment(speaker="Narrator", text="Hello", visual_prompt="v"),
+        ]
+        voice_map = {
+            "Host": "Aoede",
+            "Expert": "Charon",
+            "Narrator": "Kore",
+        }
+
+        key_v1 = AudioGenerator._batch_cache_key(segments, False, voice_map)
+
+        mocker.patch(
+            "video_overview.audio.generator._CACHE_SCHEMA_VERSION",
+            99,
+        )
+        key_v99 = AudioGenerator._batch_cache_key(segments, False, voice_map)
+
+        assert key_v1 != key_v99
