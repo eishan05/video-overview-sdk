@@ -167,7 +167,13 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
 
         # ---- 6. Assemble video ----
         _progress("Assembling video...")
-        assembler = VideoAssembler()
+        assembler = VideoAssembler(
+            width=config.video_width,
+            height=config.video_height,
+            fps=config.video_fps,
+            crossfade_seconds=config.crossfade_seconds,
+            ken_burns_zoom_percent=config.ken_burns_zoom_percent,
+        )
         output_path = assembler.assemble(
             audio_path=audio_path,
             image_paths=image_paths,
@@ -200,7 +206,13 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
             output_path = config.output
         else:
             # Needs format conversion (e.g. WAV -> MP3)
-            assembler = VideoAssembler()
+            assembler = VideoAssembler(
+                width=config.video_width,
+                height=config.video_height,
+                fps=config.video_fps,
+                crossfade_seconds=config.crossfade_seconds,
+                ken_burns_zoom_percent=config.ken_burns_zoom_percent,
+            )
             output_path = assembler.assemble(
                 audio_path=audio_path,
                 image_paths=[],

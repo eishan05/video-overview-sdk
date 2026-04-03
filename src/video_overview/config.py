@@ -62,6 +62,20 @@ class OverviewConfig(BaseModel):
     max_tokens_per_batch: PositiveInt = 8000
     max_segments_per_batch: PositiveInt = 13
     audio_max_attempts: PositiveInt = 3
+    video_width: PositiveInt = 1920
+    video_height: PositiveInt = 1080
+    video_fps: PositiveInt = 30
+    crossfade_seconds: NonNegativeFloat = Field(default=0.5, le=60.0)
+    ken_burns_zoom_percent: NonNegativeFloat = 5.0
+
+    @field_validator("video_width", "video_height")
+    @classmethod
+    def _validate_even_dimensions(cls, v: int) -> int:
+        if v % 2 != 0:
+            raise ValueError(
+                f"Video dimensions must be even for libx264 encoding, got {v}"
+            )
+        return v
 
     @field_validator("source_dir")
     @classmethod
