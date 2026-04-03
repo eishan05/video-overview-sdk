@@ -9,6 +9,7 @@ import subprocess
 from pydantic import ValidationError
 
 from video_overview.config import Script
+from video_overview.duration import compute_duration_budget
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class ScriptGenerator:
         mode: str = "conversation",
         llm_backend: str = "claude",
         max_segments: int = 20,
+        max_duration_minutes: float | None = None,
     ) -> Script:
         """Generate a script from a content bundle using an LLM backend.
 
@@ -41,6 +43,10 @@ class ScriptGenerator:
                 ``"narration"`` (single Narrator).
             llm_backend: Either ``"claude"`` or ``"codex"``.
             max_segments: Maximum number of segments in the script.
+            max_duration_minutes: Optional target duration in minutes.
+                When provided, a word and segment budget is derived and
+                included in the LLM prompt so the model produces a
+                right-sized script upfront.
 
         Returns:
             A validated :class:`Script` model.
@@ -55,7 +61,17 @@ class ScriptGenerator:
                 f"Invalid mode {mode!r}; must be one of {_VALID_MODES}"
             )
 
-        prompt = self._build_prompt(content_bundle, topic, mode, max_segments)
+        # Derive a duration budget and tighten max_segments if needed
+        try:
+            budget = compute_duration_budget(
+                max_duration_minutes, max_segments_cap=max_segments
+            )
+        except ValueError as exc:
+            raise ScriptGenerationError(str(exc)) from exc
+        if budget is not None:
+            max_segments = budget["max_segments"]
+
+        prompt = self._build_prompt(content_bundle, topic, mode, max_segments, budget)
         logger.info("Invoking LLM backend %r for topic %r", llm_backend, topic)
         raw_output = self._call_llm(prompt, llm_backend)
         logger.debug("LLM response received (%d chars)", len(raw_output))
@@ -93,6 +109,7 @@ class ScriptGenerator:
         topic: str,
         mode: str,
         max_segments: int,
+        budget: dict | None = None,
     ) -> str:
         """Assemble the full prompt text."""
         if mode == "conversation":
@@ -122,6 +139,18 @@ class ScriptGenerator:
 
         content_text = self._format_content_bundle(content_bundle)
 
+        # Build optional duration budget section
+        budget_section = ""
+        if budget is not None:
+            budget_section = (
+                f"\nDURATION BUDGET:\n"
+                f"- Target duration: {budget['target_minutes']} minute(s)\n"
+                f"- Maximum total word count across all segments: "
+                f"{budget['max_words']} words\n"
+                f"- Aim for {budget['max_segments']} segments or fewer\n"
+                f"- Keep each segment concise to stay within the word budget\n"
+            )
+
         return (
             f"You are a world-class educational scriptwriter.\n\n"
             f"TOPIC: {topic}\n\n"
@@ -145,7 +174,8 @@ class ScriptGenerator:
             f"- Each segment must have speaker, text, and visual_prompt fields\n"
             f"- visual_prompt should describe an informative diagram or "
             f"illustration that helps explain the content visually\n"
-            f"- Cover the most important aspects of the codebase\n\n"
+            f"- Cover the most important aspects of the codebase\n"
+            f"{budget_section}\n"
             f"CONTENT BUNDLE:\n{content_text}"
         )
 

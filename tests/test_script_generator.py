@@ -678,3 +678,156 @@ class TestClaudeErrorWrapper:
                 mode="conversation",
                 llm_backend="claude",
             )
+
+
+# ---------------------------------------------------------------------------
+# Duration budget in prompt
+# ---------------------------------------------------------------------------
+
+
+class TestDurationBudgetInPrompt:
+    """Tests that max_duration_minutes feeds a word/segment budget into the prompt."""
+
+    def test_budget_word_count_in_prompt(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """max_duration_minutes should put a word budget in the prompt."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=5,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        # 5 minutes * 125 wpm = 625 words
+        assert "625" in prompt
+        assert "word" in prompt.lower()
+
+    def test_budget_target_duration_in_prompt(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """The prompt should mention the target duration."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=3,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        assert "3" in prompt
+        assert "minute" in prompt.lower()
+
+    def test_no_budget_when_none(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """When max_duration_minutes is None, no budget constraint in prompt."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=None,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        # Should NOT contain budget-specific language
+        assert "DURATION BUDGET" not in prompt
+
+    def test_budget_segments_in_prompt(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """When max_duration_minutes is given, segment budget appears in prompt."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=10,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        # Should have a budget section with segment count
+        assert "DURATION BUDGET" in prompt
+
+    def test_budget_overrides_max_segments_if_smaller(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """Budget-derived segment count should override max_segments if smaller."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        # 1 minute budget => very few segments, less than default max_segments=20
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=1,
+            max_segments=20,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        # The max_segments in the prompt should be capped by the budget
+        # Budget for 1 min: 125 words, 2 segments
+        # The prompt should NOT say "Maximum 20 segments"
+        assert "Maximum 20 segments" not in prompt
+
+    def test_10_minute_budget_word_count(
+        self, generator, sample_content_bundle, valid_conversation_response, mocker
+    ):
+        """10 minutes => 1250 words in prompt."""
+        mock_run = mocker.patch(
+            "video_overview.script.generator.subprocess.run",
+            return_value=_make_subprocess_result(valid_conversation_response),
+        )
+        generator.generate(
+            content_bundle=sample_content_bundle,
+            topic="My Project",
+            mode="conversation",
+            llm_backend="claude",
+            max_duration_minutes=10,
+        )
+        prompt = mock_run.call_args[0][0][2]
+        assert "1250" in prompt
+
+    def test_invalid_max_duration_raises_script_error(
+        self, generator, sample_content_bundle
+    ):
+        """Zero/negative max_duration_minutes raises ScriptGenerationError."""
+        with pytest.raises(ScriptGenerationError, match="positive"):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+                max_duration_minutes=0,
+            )
+
+    def test_negative_max_duration_raises_script_error(
+        self, generator, sample_content_bundle
+    ):
+        """Negative max_duration_minutes raises ScriptGenerationError."""
+        with pytest.raises(ScriptGenerationError, match="positive"):
+            generator.generate(
+                content_bundle=sample_content_bundle,
+                topic="My Project",
+                mode="conversation",
+                llm_backend="claude",
+                max_duration_minutes=-5,
+            )
