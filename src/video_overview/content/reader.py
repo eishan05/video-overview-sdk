@@ -311,6 +311,14 @@ class ContentReader:
 
             candidates.append(path)
 
+        # Raise when explicit include patterns matched zero files.
+        # include=None means "no filter" and include=["*"] is the CLI
+        # default wildcard — neither should trigger this guard.
+        _is_explicit_include = include is not None and include != ["*"]
+        if _is_explicit_include and not candidates:
+            patterns_str = ", ".join(include)
+            raise ValueError(f"No files matched include patterns: {patterns_str}")
+
         # Read file contents, skipping binary files
         file_entries: list[dict] = []
         for path in candidates:
