@@ -75,6 +75,9 @@ class VisualGenerator:
         # Track prompts that have already failed so subsequent segments
         # with the same prompt skip the API call entirely.
         failed_prompts: set[str] = set()
+        # Track prompts generated in this run so that same-run
+        # deduplication still works even when no_cache=True.
+        generated_this_run: set[str] = set()
 
         for seg in script.segments:
             if seg.visual_prompt not in prompt_locks:
@@ -90,6 +93,7 @@ class VisualGenerator:
                     semaphore=semaphore,
                     prompt_lock=prompt_locks[seg.visual_prompt],
                     failed_prompts=failed_prompts,
+                    generated_this_run=generated_this_run,
                     no_cache=no_cache,
                 )
             )
@@ -122,6 +126,7 @@ class VisualGenerator:
         semaphore: asyncio.Semaphore,
         prompt_lock: asyncio.Lock,
         failed_prompts: set[str],
+        generated_this_run: set[str],
         no_cache: bool = False,
     ) -> Path:
         """Generate a single image for a visual prompt.
@@ -150,7 +155,12 @@ class VisualGenerator:
         async with prompt_lock:
             # Re-check after acquiring lock (another task may have
             # written the cache while we waited).
-            if not no_cache and cached_path.exists():
+            # When no_cache=True, still reuse results generated in this
+            # run to preserve same-run deduplication.
+            can_reuse = cached_path.exists() and (
+                not no_cache or visual_prompt in generated_this_run
+            )
+            if can_reuse:
                 logger.info(
                     "Cache hit (post-lock) for visual prompt: %s", visual_prompt
                 )
@@ -165,6 +175,7 @@ class VisualGenerator:
                         image_bytes = await self._call_api(client, visual_prompt)
                         if image_bytes is not None:
                             cached_path.write_bytes(image_bytes)
+                            generated_this_run.add(visual_prompt)
                             return cached_path
                         # No image in response -- fall through to fallback
                         logger.warning(
@@ -187,7 +198,7 @@ class VisualGenerator:
                 f"{visual_prompt}::{segment_text}".encode()
             ).hexdigest()
             fallback_path = visuals_dir / f"{fallback_key}.png"
-            if not fallback_path.exists():
+            if no_cache or not fallback_path.exists():
                 self._create_fallback_image(segment_text, fallback_path)
             return fallback_path
 

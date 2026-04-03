@@ -152,10 +152,15 @@ class AudioGenerator:
             if not no_cache and chunk_path.exists() and self._is_valid_wav(chunk_path):
                 logger.info("Audio cache hit for batch: %s", cache_key)
             else:
-                if chunk_path.exists():
+                if chunk_path.exists() and not self._is_valid_wav(chunk_path):
                     logger.warning("Corrupt cache file removed: %s", chunk_path)
                     chunk_path.unlink()
-                logger.info("Audio cache miss for batch: %s", cache_key)
+                if no_cache:
+                    logger.info(
+                        "Audio cache bypass (no_cache) for batch: %s", cache_key
+                    )
+                else:
+                    logger.info("Audio cache miss for batch: %s", cache_key)
                 prompt = self._build_prompt(batch)
                 config = self._build_config(batch, is_multi_speaker, voice_map)
                 audio_bytes = self._call_api_with_retry(
