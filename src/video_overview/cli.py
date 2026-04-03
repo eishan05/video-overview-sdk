@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -118,6 +119,13 @@ def _validate_output_parent(
     default=10,
     help="Maximum duration in minutes.",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Enable verbose logging (INFO level).",
+)
 def main(
     source_dir: str,
     topic: str,
@@ -131,8 +139,23 @@ def main(
     narrator_voice: str,
     llm: str,
     max_duration: int,
+    verbose: bool,
 ) -> None:
     """Generate a video or audio overview from source content."""
+    # Configure logging based on --verbose flag.
+    # Default is WARNING; --verbose sets to INFO.
+    # Library consumers can configure logging independently.
+    log_level = logging.INFO if verbose else logging.WARNING
+    root = logging.getLogger()
+    if not root.handlers:
+        # No handlers yet — add a default stderr handler.
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(name)s: %(levelname)s: %(message)s"))
+        root.addHandler(handler)
+    # Always set the effective level so --verbose takes effect
+    # even when the embedding process pre-configured logging.
+    root.setLevel(log_level)
+
     try:
         config = OverviewConfig(
             source_dir=source_dir,

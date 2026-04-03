@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 
 from pydantic import ValidationError
 
 from video_overview.config import Script
+
+logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 300
 
@@ -53,7 +56,9 @@ class ScriptGenerator:
             )
 
         prompt = self._build_prompt(content_bundle, topic, mode, max_segments)
+        logger.info("Invoking LLM backend %r for topic %r", llm_backend, topic)
         raw_output = self._call_llm(prompt, llm_backend)
+        logger.debug("LLM response received (%d chars)", len(raw_output))
         script = self._parse_response(raw_output)
 
         # Enforce max_segments server-side (LLM may exceed the limit)
