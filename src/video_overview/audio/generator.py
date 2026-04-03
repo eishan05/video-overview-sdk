@@ -13,14 +13,12 @@ from google import genai
 from google.genai import types
 
 from video_overview.config import Script
+from video_overview.duration import estimate_segment_duration
 
 _MODEL = "gemini-2.5-flash-preview-tts"
 _BATCH_SIZE = 13  # Target ~10-15 segments per batch; TODO: also budget by token count
 _MAX_RETRIES = 3
 _BASE_DELAY = 1  # seconds
-# Average speaking rate: ~150 words per minute => ~2.5 words/sec
-# Average word length ~5 chars => ~12.5 chars/sec
-_CHARS_PER_SECOND = 12.5
 _CONVERSATION_SPEAKERS = {"Host", "Expert"}
 _NARRATION_SPEAKERS = {"Narrator"}
 
@@ -342,9 +340,10 @@ class AudioGenerator:
     def _estimate_durations(segments: list) -> list[float]:
         """Estimate duration for each segment based on text length.
 
-        Uses an approximate speaking rate of ~12.5 characters per second.
+        Delegates to the shared ``estimate_segment_duration`` helper
+        (speaking rate ~12.5 characters per second, 0.5 s minimum).
         """
-        return [max(0.5, len(seg.text) / _CHARS_PER_SECOND) for seg in segments]
+        return [estimate_segment_duration(seg.text) for seg in segments]
 
 
 # ---------------------------------------------------------------------------

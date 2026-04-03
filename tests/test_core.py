@@ -738,3 +738,145 @@ class TestExports:
         from video_overview import OverviewConfig
 
         assert OverviewConfig is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests: max_duration_minutes truncation in create_overview
+# ---------------------------------------------------------------------------
+
+
+class TestMaxDurationTruncation:
+    """create_overview truncates the script segment list to stay within
+    config.max_duration_minutes."""
+
+    @staticmethod
+    def _make_long_script(n_segments: int = 10) -> Script:
+        """Create a Script where each segment is ~60s (750 chars at 12.5 c/s)."""
+        segments = [
+            ScriptSegment(
+                speaker="Host" if i % 2 == 0 else "Expert",
+                text="X" * 750,
+                visual_prompt=f"Visual prompt for segment {i}",
+            )
+            for i in range(n_segments)
+        ]
+        return Script(title="Long Overview", segments=segments)
+
+    def test_truncates_segments_for_video_mode(self, tmp_source, all_mocks):
+        """10 segments * 60s = 600s.  max_duration_minutes=3 => keep 3."""
+        from video_overview.core import create_overview
+
+        all_mocks["script_generator"].generate.return_value = self._make_long_script(10)
+        # Audio mock must return durations matching the *truncated* segment count
+        all_mocks["audio_inst"].generate.return_value = (
+            Path("/tmp/cache/output.wav"),
+            [60.0] * 3,
+        )
+        all_mocks["visual_inst"].generate = AsyncMock(
+            return_value=[Path(f"/tmp/cache/visuals/img{i}.png") for i in range(3)]
+        )
+
+        config = _make_config(tmp_source, format="video", max_duration_minutes=3)
+        result = create_overview(config=config)
+
+        # The script passed to audio generator should have only 3 segments
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        audio_script = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(audio_script.segments) == 3
+
+        # The script passed to visual generator should also have only 3 segments
+        visual_call = all_mocks["visual_inst"].generate.call_args
+        visual_script = visual_call.kwargs.get("script") or visual_call.args[0]
+        assert len(visual_script.segments) == 3
+
+        assert result.segments_count == 3
+
+    def test_truncates_segments_for_audio_mode(self, tmp_source, all_mocks):
+        """Audio mode also truncates segments."""
+        from video_overview.core import create_overview
+
+        all_mocks["script_generator"].generate.return_value = self._make_long_script(10)
+        all_mocks["audio_inst"].generate.return_value = (
+            Path("/tmp/cache/output.wav"),
+            [60.0] * 5,
+        )
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(
+            tmp_source, format="audio", output=out, max_duration_minutes=5
+        )
+        result = create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        script_arg = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(script_arg.segments) == 5
+        assert result.segments_count == 5
+
+    def test_no_truncation_when_within_limit(self, tmp_source, all_mocks):
+        """All segments kept if total estimated duration is within limit."""
+        from video_overview.core import create_overview
+
+        all_mocks["script_generator"].generate.return_value = _make_script(3)
+        config = _make_config(tmp_source, format="video", max_duration_minutes=10)
+        result = create_overview(config=config)
+
+        assert result.segments_count == 3
+
+    def test_always_keeps_at_least_one_segment(self, tmp_source, all_mocks):
+        """Even when all segments exceed the limit, keep the first one."""
+        from video_overview.core import create_overview
+
+        # 5 segments, each 10000 chars = 800s = 13+ minutes
+        # Limit = 1 minute, so even the first exceeds, but we keep it
+        long_script = Script(
+            title="Long",
+            segments=[
+                ScriptSegment(
+                    speaker="Host" if i % 2 == 0 else "Expert",
+                    text="X" * 10000,
+                    visual_prompt=f"prompt {i}",
+                )
+                for i in range(5)
+            ],
+        )
+        all_mocks["script_generator"].generate.return_value = long_script
+        all_mocks["audio_inst"].generate.return_value = (
+            Path("/tmp/cache/output.wav"),
+            [800.0],
+        )
+        all_mocks["visual_inst"].generate = AsyncMock(
+            return_value=[Path("/tmp/cache/visuals/img0.png")]
+        )
+
+        config = _make_config(tmp_source, format="video", max_duration_minutes=1)
+        result = create_overview(config=config)
+
+        # Only 1 segment kept despite 5 being available
+        assert result.segments_count == 1
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        script_arg = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(script_arg.segments) == 1
+
+    def test_exact_kept_count_5min_limit(self, tmp_source, all_mocks):
+        """10 segments * 60s each, limit 5min => keep exactly 5."""
+        from video_overview.core import create_overview
+
+        all_mocks["script_generator"].generate.return_value = self._make_long_script(10)
+        all_mocks["audio_inst"].generate.return_value = (
+            Path("/tmp/cache/output.wav"),
+            [60.0] * 5,
+        )
+        all_mocks["visual_inst"].generate = AsyncMock(
+            return_value=[Path(f"/tmp/cache/visuals/img{i}.png") for i in range(5)]
+        )
+
+        config = _make_config(tmp_source, format="video", max_duration_minutes=5)
+        create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        audio_script = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(audio_script.segments) == 5
+
+        visual_call = all_mocks["visual_inst"].generate.call_args
+        visual_script = visual_call.kwargs.get("script") or visual_call.args[0]
+        assert len(visual_script.segments) == 5

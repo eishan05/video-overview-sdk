@@ -10,6 +10,7 @@ from pathlib import Path
 from video_overview.audio.generator import AudioGenerator
 from video_overview.config import OverviewConfig, OverviewResult, Script
 from video_overview.content.reader import ContentReader
+from video_overview.duration import truncate_segments
 from video_overview.script.generator import ScriptGenerator
 from video_overview.video.assembler import VideoAssembler
 from video_overview.visuals.generator import VisualGenerator
@@ -102,11 +103,6 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         An ``OverviewResult`` with output path, duration, and
         segment count.
 
-    Note:
-        ``OverviewConfig.max_duration_minutes`` is accepted but not
-        yet enforced.  Duration capping will be added in a future
-        release.
-
     Raises:
         ValueError: If required API keys are missing.
         Various sub-component errors propagate unchanged.
@@ -144,6 +140,16 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         mode=config.mode,
         llm_backend=config.llm_backend,
     )
+
+    # ---- 4b. Truncate script to honour max_duration_minutes ----
+    truncated = truncate_segments(script.segments, config.max_duration_minutes)
+    if len(truncated) < len(script.segments):
+        _progress(
+            f"Truncated script from {len(script.segments)} to "
+            f"{len(truncated)} segments to fit within "
+            f"{config.max_duration_minutes} minute(s)."
+        )
+        script = Script(title=script.title, segments=truncated)
 
     # ---- 5. Generate audio (+ visuals for video mode) ----
     if config.format == "video":
