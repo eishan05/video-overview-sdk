@@ -26,6 +26,7 @@ def _create_static_frame(
     cache_dir: Path,
     width: int = 1920,
     height: int = 1080,
+    no_cache: bool = False,
 ) -> Path:
     """Create a single static dark frame image using ffmpeg.
 
@@ -36,6 +37,8 @@ def _create_static_frame(
         cache_dir: Directory to store the generated frame.
         width: Frame width in pixels.
         height: Frame height in pixels.
+        no_cache: When True, skip reading cached frame and always
+            regenerate.
 
     Returns:
         Path to the generated PNG file.
@@ -44,7 +47,7 @@ def _create_static_frame(
     cache_dir.mkdir(parents=True, exist_ok=True)
     frame_path = cache_dir / f"static_frame_{width}x{height}.png"
 
-    if frame_path.exists():
+    if not no_cache and frame_path.exists():
         return frame_path
 
     cmd = [
@@ -233,6 +236,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
                 cache_dir=config.cache_dir,
                 width=config.video_width,
                 height=config.video_height,
+                no_cache=config.no_cache,
             )
             image_paths = [static_frame] * len(script.segments)
         else:
