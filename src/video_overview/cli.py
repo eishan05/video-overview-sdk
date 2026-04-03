@@ -146,12 +146,17 @@ def main(
     # Default is WARNING; --verbose sets to INFO.
     # Library consumers can configure logging independently.
     log_level = logging.INFO if verbose else logging.WARNING
-    logging.basicConfig(
-        level=log_level,
-        format="%(name)s: %(levelname)s: %(message)s",
-        stream=sys.stderr,
-        force=True,
-    )
+    root = logging.getLogger()
+    if not root.handlers:
+        # No handlers yet — add a default stderr handler.
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(
+            logging.Formatter("%(name)s: %(levelname)s: %(message)s")
+        )
+        root.addHandler(handler)
+    # Always set the effective level so --verbose takes effect
+    # even when the embedding process pre-configured logging.
+    root.setLevel(log_level)
 
     try:
         config = OverviewConfig(
