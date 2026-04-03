@@ -226,6 +226,20 @@ class TestCacheClearConfirmation:
         result = runner.invoke(main, ["cache", "clear", "--help"])
         assert "--yes" in result.output
 
+    def test_safety_check_blocks_non_cache_dir_even_with_yes(self, runner, tmp_path):
+        """--yes skips prompts but not the safety check."""
+        bad_dir = tmp_path / "not_a_cache"
+        bad_dir.mkdir()
+        (bad_dir / "important.py").write_text("x = 1")
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(bad_dir), "--yes"],
+        )
+        assert result.exit_code != 0
+        assert "does not look like" in result.output.lower()
+        # File should still exist
+        assert (bad_dir / "important.py").exists()
+
 
 class TestCacheGroupHelp:
     """Test cache group help text."""
@@ -257,6 +271,12 @@ class TestExistingCLIUnchanged:
         assert result.exit_code == 0
         assert "--topic" in result.output
         assert "--output" in result.output
+
+    def test_top_level_help_mentions_cache_command(self, runner):
+        """Top-level help should mention the cache subcommand."""
+        result = runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "cache" in result.output.lower()
 
     def test_version_flag(self, runner):
         result = runner.invoke(main, ["--version"])

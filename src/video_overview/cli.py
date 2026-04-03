@@ -87,7 +87,7 @@ def main(ctx: click.Context) -> None:
         click.echo(ctx.get_help())
 
 
-@main.command()
+@main.command(epilog="Additional commands: cache (see 'video-overview cache --help')")
 @click.argument(
     "source_dir",
     type=click.Path(exists=True, file_okay=False),
@@ -378,18 +378,21 @@ def cache_clear(
 
     # Safety check: ensure the directory looks like a cache directory
     # (contains expected cache artifacts or is named correctly).
+    # This check is always enforced, even with --yes, to prevent
+    # accidental deletion of non-cache directories in scripts.
     _looks_like_cache = (
         resolved.name == _CACHE_DIR_NAME
         or any(resolved.glob("audio_*.wav"))
         or (resolved / "visuals").is_dir()
     )
-    if not _looks_like_cache and not yes:
-        click.echo(
-            f"Warning: {resolved} does not look like a video-overview cache directory."
-        )
-        if not click.confirm("Delete all contents anyway?"):
-            click.echo("Aborted.")
-            return
+    if not _looks_like_cache:
+        # Empty directories are safe to clear regardless.
+        if any(resolved.iterdir()):
+            click.echo(
+                f"Error: {resolved} does not look like a "
+                f"video-overview cache directory. Aborting."
+            )
+            sys.exit(1)
 
     if not yes:
         if not click.confirm(f"Delete all cached files in {resolved}?"):
