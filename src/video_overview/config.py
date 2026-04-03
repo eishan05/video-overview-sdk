@@ -68,6 +68,7 @@ class OverviewConfig(BaseModel):
     crossfade_seconds: NonNegativeFloat = Field(default=0.5, le=60.0)
     ken_burns_zoom_percent: NonNegativeFloat = 5.0
     skip_visuals: bool = False
+    no_cache: bool = False
 
     @field_validator("video_width", "video_height")
     @classmethod

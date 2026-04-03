@@ -701,6 +701,73 @@ class TestSkipVisualsOption:
         assert "--skip-visuals" in result.output
 
 
+class TestNoCacheOption:
+    """Test --no-cache CLI flag."""
+
+    def test_no_cache_flag_accepted(self, runner, source_dir, output_file, mock_result):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--no-cache",
+                ],
+            )
+        assert result.exit_code == 0
+
+    def test_no_cache_passed_to_config(
+        self, runner, source_dir, output_file, mock_result
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ) as mock_fn:
+            runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--no-cache",
+                ],
+            )
+        config = mock_fn.call_args[1]["config"]
+        assert config.no_cache is True
+
+    def test_no_cache_default_is_false(
+        self, runner, source_dir, output_file, mock_result
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ) as mock_fn:
+            runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                ],
+            )
+        config = mock_fn.call_args[1]["config"]
+        assert config.no_cache is False
+
+    def test_no_cache_in_help(self, runner):
+        result = runner.invoke(main, ["--help"])
+        assert "--no-cache" in result.output
+
+
 class TestHelpText:
     """Test that --help works."""
 
@@ -722,3 +789,4 @@ class TestHelpText:
         assert "--narrator-voice" in result.output
         assert "--llm" in result.output
         assert "--max-duration" in result.output
+        assert "--no-cache" in result.output

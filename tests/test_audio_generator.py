@@ -1667,3 +1667,121 @@ class TestAudioCacheModelInvalidation:
         key_v99 = AudioGenerator._batch_cache_key(segments, False, voice_map)
 
         assert key_v1 != key_v99
+
+
+# ---------------------------------------------------------------------------
+# no_cache flag
+# ---------------------------------------------------------------------------
+
+
+class TestAudioNoCache:
+    """Tests that no_cache=True forces regeneration even when cache exists."""
+
+    def test_no_cache_regenerates_despite_existing_cache(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """When no_cache=True, API should be called even if cache files exist."""
+        wav_data = _make_wav_bytes()
+
+        # Pre-populate cache
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(wav_data)
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _mock_response(wav_data)
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, durations = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            no_cache=True,
+        )
+
+        # API SHOULD have been called (cache ignored)
+        assert mock_client.models.generate_content.call_count >= 1
+        assert audio_path.exists()
+        assert len(durations) == len(narration_script.segments)
+
+    def test_no_cache_false_uses_cache(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """When no_cache=False (default), existing cache should be used."""
+        wav_data = _make_wav_bytes()
+
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(wav_data)
+
+        mock_client = MagicMock()
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        audio_path, durations = generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+            no_cache=False,
+        )
+
+        # API should NOT have been called
+        mock_client.models.generate_content.assert_not_called()
+
+    def test_no_cache_default_is_false(
+        self, generator, narration_script, tmp_path, mocker
+    ):
+        """Default no_cache should be False (cache is used)."""
+        wav_data = _make_wav_bytes()
+
+        voice_map = {"Host": "Aoede", "Expert": "Charon", "Narrator": "Kore"}
+        batches = AudioGenerator._chunk_segments(narration_script.segments)
+        for batch in batches:
+            key = AudioGenerator._batch_cache_key(batch, False, voice_map)
+            cache_file = tmp_path / f"audio_{key}.wav"
+            cache_file.write_bytes(wav_data)
+
+        mock_client = MagicMock()
+        mocker.patch(
+            "video_overview.audio.generator.genai.Client",
+            return_value=mock_client,
+        )
+        mocker.patch(
+            "video_overview.audio.generator.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        )
+
+        # Call without specifying no_cache (should default to False)
+        generator.generate(
+            script=narration_script,
+            host_voice="Aoede",
+            expert_voice="Charon",
+            narrator_voice="Kore",
+            cache_dir=tmp_path,
+        )
+
+        # API should NOT have been called (cache used by default)
+        mock_client.models.generate_content.assert_not_called()

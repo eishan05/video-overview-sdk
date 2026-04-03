@@ -1110,3 +1110,72 @@ class TestVideoAssemblerConfigThreading:
             crossfade_seconds=1.0,
             ken_burns_zoom_percent=10.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: no_cache threading
+# ---------------------------------------------------------------------------
+
+
+class TestNoCacheThreading:
+    """Verify no_cache is passed through to both audio and visual generators."""
+
+    def test_no_cache_true_passed_to_audio_generator_video_mode(
+        self, tmp_source, all_mocks
+    ):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", no_cache=True)
+        create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        assert audio_call.kwargs.get("no_cache") is True
+
+    def test_no_cache_true_passed_to_visual_generator_video_mode(
+        self, tmp_source, all_mocks
+    ):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", no_cache=True)
+        create_overview(config=config)
+
+        visual_call = all_mocks["visual_inst"].generate.call_args
+        assert visual_call.kwargs.get("no_cache") is True
+
+    def test_no_cache_false_passed_to_audio_generator_video_mode(
+        self, tmp_source, all_mocks
+    ):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", no_cache=False)
+        create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        assert audio_call.kwargs.get("no_cache") is False
+
+    def test_no_cache_true_passed_to_audio_generator_audio_mode(
+        self, tmp_source, all_mocks
+    ):
+        from video_overview.core import create_overview
+
+        out = tmp_source / "output.mp3"
+        config = _make_config(tmp_source, format="audio", output=out, no_cache=True)
+        create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        assert audio_call.kwargs.get("no_cache") is True
+
+    def test_no_cache_true_passed_to_audio_in_skip_visuals_mode(
+        self, tmp_source, all_mocks
+    ):
+        from video_overview.core import create_overview
+
+        config = _make_config(
+            tmp_source, format="video", skip_visuals=True, no_cache=True
+        )
+        with patch("video_overview.core._create_static_frame") as mock_frame:
+            mock_frame.return_value = Path("/tmp/cache/static_frame.png")
+            create_overview(config=config)
+
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        assert audio_call.kwargs.get("no_cache") is True

@@ -774,3 +774,101 @@ class TestReturnType:
         assert isinstance(result, list)
         assert all(isinstance(p, Path) for p in result)
         assert len(result) == len(three_segment_script.segments)
+
+
+# ---------------------------------------------------------------------------
+# no_cache flag
+# ---------------------------------------------------------------------------
+
+
+class TestVisualNoCache:
+    """Tests that no_cache=True forces regeneration even when cache exists."""
+
+    def test_no_cache_regenerates_despite_existing_cache(
+        self, generator, tmp_path, mocker
+    ):
+        """When no_cache=True, API should be called even if cache files exist."""
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Cached diagram"),
+            ]
+        )
+
+        # Pre-populate cache
+        visuals_dir = tmp_path / "visuals"
+        visuals_dir.mkdir(parents=True)
+        cache_hash = _cache_key("Cached diagram")
+        cached_file = visuals_dir / f"{cache_hash}.png"
+        cached_file.write_bytes(b"\x89PNG_cached")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_image_response(
+            data=b"\x89PNG_fresh"
+        )
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+
+        result = asyncio.run(generator.generate(script, tmp_path, no_cache=True))
+
+        assert len(result) == 1
+        # API SHOULD have been called (cache ignored)
+        mock_client.models.generate_content.assert_called_once()
+        # Cached file should be overwritten with fresh data
+        assert result[0].read_bytes() == b"\x89PNG_fresh"
+
+    def test_no_cache_false_uses_cache(self, generator, tmp_path, mocker):
+        """When no_cache=False (default), existing cache should be used."""
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Cached diagram"),
+            ]
+        )
+
+        # Pre-populate cache
+        visuals_dir = tmp_path / "visuals"
+        visuals_dir.mkdir(parents=True)
+        cache_hash = _cache_key("Cached diagram")
+        cached_file = visuals_dir / f"{cache_hash}.png"
+        cached_file.write_bytes(b"\x89PNG_cached")
+
+        mock_client = MagicMock()
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+
+        result = asyncio.run(generator.generate(script, tmp_path, no_cache=False))
+
+        assert len(result) == 1
+        assert result[0] == cached_file
+        # API should NOT have been called
+        mock_client.models.generate_content.assert_not_called()
+
+    def test_no_cache_default_is_false(self, generator, tmp_path, mocker):
+        """Default no_cache should be False (cache is used)."""
+        script = _make_script(
+            [
+                ("Host", "Hello.", "Cached diagram"),
+            ]
+        )
+
+        # Pre-populate cache
+        visuals_dir = tmp_path / "visuals"
+        visuals_dir.mkdir(parents=True)
+        cache_hash = _cache_key("Cached diagram")
+        cached_file = visuals_dir / f"{cache_hash}.png"
+        cached_file.write_bytes(b"\x89PNG_cached")
+
+        mock_client = MagicMock()
+        mocker.patch(
+            "video_overview.visuals.generator.genai.Client",
+            return_value=mock_client,
+        )
+
+        # Call without specifying no_cache (should default to False)
+        result = asyncio.run(generator.generate(script, tmp_path))
+
+        assert result[0] == cached_file
+        mock_client.models.generate_content.assert_not_called()

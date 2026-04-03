@@ -60,6 +60,7 @@ class AudioGenerator:
         max_tokens_per_batch: int = _DEFAULT_MAX_TOKENS_PER_BATCH,
         max_segments_per_batch: int = _DEFAULT_MAX_SEGMENTS_PER_BATCH,
         max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+        no_cache: bool = False,
     ) -> tuple[Path, list[float]]:
         """Generate audio from a script.
 
@@ -75,6 +76,8 @@ class AudioGenerator:
                 batch (secondary guard).
             max_attempts: Maximum number of total attempts for each
                 API call (includes the initial attempt plus retries).
+            no_cache: When True, skip reading cached audio files and
+                always regenerate from the API.
 
         Returns:
             A tuple of (audio_path, segment_durations) where audio_path
@@ -146,13 +149,18 @@ class AudioGenerator:
             cache_key = self._batch_cache_key(batch, is_multi_speaker, voice_map)
             chunk_path = cache_dir / f"audio_{cache_key}.wav"
 
-            if chunk_path.exists() and self._is_valid_wav(chunk_path):
+            if not no_cache and chunk_path.exists() and self._is_valid_wav(chunk_path):
                 logger.info("Audio cache hit for batch: %s", cache_key)
             else:
-                if chunk_path.exists():
+                if chunk_path.exists() and not self._is_valid_wav(chunk_path):
                     logger.warning("Corrupt cache file removed: %s", chunk_path)
                     chunk_path.unlink()
-                logger.info("Audio cache miss for batch: %s", cache_key)
+                if no_cache:
+                    logger.info(
+                        "Audio cache bypass (no_cache) for batch: %s", cache_key
+                    )
+                else:
+                    logger.info("Audio cache miss for batch: %s", cache_key)
                 prompt = self._build_prompt(batch)
                 config = self._build_config(batch, is_multi_speaker, voice_map)
                 audio_bytes = self._call_api_with_retry(
