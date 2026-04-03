@@ -59,6 +59,9 @@ class OverviewConfig(BaseModel):
     max_duration_minutes: PositiveInt = 10
     llm_backend: Literal["claude", "codex"] = "claude"
     cache_dir: Optional[Path] = None
+    max_tokens_per_batch: PositiveInt = 8000
+    max_segments_per_batch: PositiveInt = 13
+    audio_max_attempts: PositiveInt = 3
 
     @field_validator("source_dir")
     @classmethod
