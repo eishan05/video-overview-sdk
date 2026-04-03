@@ -31,9 +31,6 @@ _HANDLED_ERRORS = (
 #: Default cache directory name (relative to source_dir).
 _CACHE_DIR_NAME = ".video_overview_cache"
 
-#: Known subcommand names that the group should route to subcommands.
-_SUBCOMMANDS = {"cache"}
-
 
 def _validate_output_parent(
     ctx: click.Context,
@@ -64,11 +61,14 @@ class _DefaultCommandGroup(click.Group):
         # --version is handled by the group itself (click.version_option).
         if args and args[0] == "--version":
             return super().parse_args(ctx, args)
+        # Dynamically check registered commands so that explicit
+        # `video-overview generate ...` works alongside `cache` etc.
+        registered = set(self.list_commands(ctx))
         # For everything else, if the first arg is not a known subcommand,
         # prepend 'generate' so Click routes to the default command.
         # This includes --help (so `video-overview --help` shows generate help)
         # and positional args (so `video-overview ./src ...` still works).
-        if args and args[0] not in _SUBCOMMANDS:
+        if args and args[0] not in registered:
             args = ["generate"] + list(args)
         # If no args at all, also route to generate (which will show its help
         # due to missing required arguments).
@@ -353,7 +353,18 @@ def cache_list(cache_dir: str | None, source_dir: str | None) -> None:
     default=None,
     help="Source directory (cache is at <source-dir>/.video_overview_cache).",
 )
-def cache_clear(cache_dir: str | None, source_dir: str | None) -> None:
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt.",
+)
+def cache_clear(
+    cache_dir: str | None,
+    source_dir: str | None,
+    yes: bool,
+) -> None:
     """Delete all cached audio and visual assets."""
     resolved = _resolve_cache_dir(cache_dir, source_dir)
     if resolved is None:
@@ -364,6 +375,26 @@ def cache_clear(cache_dir: str | None, source_dir: str | None) -> None:
     if not resolved.is_dir():
         click.echo("No cache directory found. Nothing to clear.")
         return
+
+    # Safety check: ensure the directory looks like a cache directory
+    # (contains expected cache artifacts or is named correctly).
+    _looks_like_cache = (
+        resolved.name == _CACHE_DIR_NAME
+        or any(resolved.glob("audio_*.wav"))
+        or (resolved / "visuals").is_dir()
+    )
+    if not _looks_like_cache and not yes:
+        click.echo(
+            f"Warning: {resolved} does not look like a video-overview cache directory."
+        )
+        if not click.confirm("Delete all contents anyway?"):
+            click.echo("Aborted.")
+            return
+
+    if not yes:
+        if not click.confirm(f"Delete all cached files in {resolved}?"):
+            click.echo("Aborted.")
+            return
 
     # Remove all contents of the cache directory
     removed_count = 0
@@ -382,8 +413,8 @@ def cache_clear(cache_dir: str | None, source_dir: str | None) -> None:
             item.unlink()
 
     click.echo(
-        f"Cleared {removed_count} cached files ({_format_size(removed_bytes)}) "
-        f"from {resolved}"
+        f"Cleared {removed_count} cached files "
+        f"({_format_size(removed_bytes)}) from {resolved}"
     )
 
 

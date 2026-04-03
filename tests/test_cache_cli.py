@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from video_overview.cli import main
+from video_overview.config import OverviewResult
 
 
 @pytest.fixture
@@ -66,7 +68,6 @@ class TestCacheList:
         assert result.exit_code == 0
         # Should show counts for audio and visual assets
         assert "2" in result.output  # 2 audio cache files (audio_*.wav)
-        assert "2" in result.output  # 2 visual cache files
 
     def test_list_empty_cache_dir(self, runner, tmp_path):
         empty_cache = tmp_path / "empty_cache"
@@ -88,49 +89,65 @@ class TestCacheList:
     def test_list_source_dir_option(self, runner, cache_dir):
         """--source-dir derives cache dir from .video_overview_cache."""
         source_dir = cache_dir.parent  # tmp_path/project
-        result = runner.invoke(main, ["cache", "list", "--source-dir", str(source_dir)])
+        result = runner.invoke(
+            main,
+            ["cache", "list", "--source-dir", str(source_dir)],
+        )
         assert result.exit_code == 0
         assert "audio" in result.output.lower()
 
-    def test_list_no_options_shows_help(self, runner):
-        """Without --cache-dir or --source-dir, should show helpful message."""
+    def test_list_no_options_shows_error(self, runner):
+        """Without --cache-dir or --source-dir, should show error."""
         result = runner.invoke(main, ["cache", "list"])
-        # Should either work with a default or show an error
-        # We expect it to require at least one option
-        assert result.exit_code != 0 or "cache" in result.output.lower()
+        assert result.exit_code != 0
 
 
 class TestCacheClear:
     """Test 'video-overview cache clear' subcommand."""
 
     def test_clear_removes_audio_cache(self, runner, cache_dir):
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(cache_dir)])
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
         assert result.exit_code == 0
         audio_files = list(cache_dir.glob("audio_*.wav"))
         assert len(audio_files) == 0
 
     def test_clear_removes_visual_cache(self, runner, cache_dir):
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(cache_dir)])
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
         assert result.exit_code == 0
         visuals_dir = cache_dir / "visuals"
         visual_files = list(visuals_dir.glob("*.png")) if visuals_dir.exists() else []
         assert len(visual_files) == 0
 
     def test_clear_removes_intermediate_files(self, runner, cache_dir):
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(cache_dir)])
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
         assert result.exit_code == 0
         assert not (cache_dir / "output.wav").exists()
         assert not (cache_dir / "filelist.txt").exists()
         assert not (cache_dir / "static_frame_1920x1080.png").exists()
 
     def test_clear_prints_confirmation(self, runner, cache_dir):
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(cache_dir)])
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
         assert result.exit_code == 0
         assert "cleared" in result.output.lower() or "removed" in result.output.lower()
 
     def test_clear_nonexistent_cache_dir(self, runner, tmp_path):
         missing = tmp_path / "nonexistent"
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(missing)])
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(missing), "--yes"],
+        )
         assert result.exit_code == 0
         assert (
             "no cache" in result.output.lower()
@@ -142,7 +159,8 @@ class TestCacheClear:
         empty_cache = tmp_path / "empty_cache"
         empty_cache.mkdir()
         result = runner.invoke(
-            main, ["cache", "clear", "--cache-dir", str(empty_cache)]
+            main,
+            ["cache", "clear", "--cache-dir", str(empty_cache), "--yes"],
         )
         assert result.exit_code == 0
 
@@ -150,18 +168,63 @@ class TestCacheClear:
         """--source-dir derives cache dir from .video_overview_cache."""
         source_dir = cache_dir.parent
         result = runner.invoke(
-            main, ["cache", "clear", "--source-dir", str(source_dir)]
+            main,
+            ["cache", "clear", "--source-dir", str(source_dir), "-y"],
         )
         assert result.exit_code == 0
         audio_files = list(cache_dir.glob("audio_*.wav"))
         assert len(audio_files) == 0
 
     def test_clear_preserves_cache_dir_itself(self, runner, cache_dir):
-        """Cache clear should remove contents but not the directory itself."""
-        result = runner.invoke(main, ["cache", "clear", "--cache-dir", str(cache_dir)])
+        """Cache clear removes contents but not the directory itself."""
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
         assert result.exit_code == 0
-        # The directory itself may or may not exist, but no error should occur
-        # In our implementation, we'll remove all contents
+
+
+class TestCacheClearConfirmation:
+    """Test --yes flag and confirmation prompt for cache clear."""
+
+    def test_clear_without_yes_prompts_for_confirmation(self, runner, cache_dir):
+        """Without --yes, cache clear should prompt for confirmation."""
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir)],
+            input="y\n",
+        )
+        assert result.exit_code == 0
+        assert "cleared" in result.output.lower()
+
+    def test_clear_aborted_on_no(self, runner, cache_dir):
+        """Answering 'n' to the prompt should abort without deleting."""
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir)],
+            input="n\n",
+        )
+        assert result.exit_code == 0
+        assert "aborted" in result.output.lower()
+        # Files should still exist
+        audio_files = list(cache_dir.glob("audio_*.wav"))
+        assert len(audio_files) == 2
+
+    def test_yes_flag_skips_prompt(self, runner, cache_dir):
+        """--yes should skip the confirmation prompt."""
+        result = runner.invoke(
+            main,
+            ["cache", "clear", "--cache-dir", str(cache_dir), "--yes"],
+        )
+        assert result.exit_code == 0
+        assert "cleared" in result.output.lower()
+        # Verify files were deleted
+        audio_files = list(cache_dir.glob("audio_*.wav"))
+        assert len(audio_files) == 0
+
+    def test_clear_help_shows_yes_flag(self, runner):
+        result = runner.invoke(main, ["cache", "clear", "--help"])
+        assert "--yes" in result.output
 
 
 class TestCacheGroupHelp:
@@ -187,11 +250,7 @@ class TestCacheGroupHelp:
 
 
 class TestExistingCLIUnchanged:
-    """Verify existing top-level CLI interface still works unchanged.
-
-    These tests duplicate key scenarios from test_cli.py but invoke
-    through the group to ensure no breaking changes.
-    """
+    """Verify existing top-level CLI interface still works unchanged."""
 
     def test_top_level_help_still_shows_options(self, runner):
         result = runner.invoke(main, ["--help"])
@@ -203,3 +262,32 @@ class TestExistingCLIUnchanged:
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
         assert "video-overview" in result.output.lower()
+
+    def test_explicit_generate_subcommand(self, runner, tmp_path):
+        """Explicit 'generate' subcommand should work."""
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "file.py").write_text("print('hello')")
+        output = tmp_path / "output.mp4"
+        mock_result = OverviewResult(
+            output_path=output,
+            duration_seconds=60.0,
+            segments_count=3,
+        )
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    "generate",
+                    str(source),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output),
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Overview created" in result.output
