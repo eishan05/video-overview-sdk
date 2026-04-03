@@ -63,6 +63,11 @@ class VideoAssembler:
             raise VideoAssemblyError(
                 f"crossfade_seconds must be non-negative, got {crossfade_seconds}"
             )
+        if crossfade_seconds > 60:
+            raise VideoAssemblyError(
+                f"crossfade_seconds must be <= 60 (ffmpeg xfade limit), "
+                f"got {crossfade_seconds}"
+            )
         if ken_burns_zoom_percent < 0:
             raise VideoAssemblyError(
                 f"ken_burns_zoom_percent must be non-negative, "

@@ -641,6 +641,28 @@ class TestOverviewConfigVideoConstants:
                 crossfade_seconds=-0.5,
             )
 
+    def test_crossfade_over_60_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                crossfade_seconds=61.0,
+            )
+
+    def test_crossfade_at_60_accepted(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            crossfade_seconds=60.0,
+        )
+        assert cfg.crossfade_seconds == 60.0
+
     def test_negative_ken_burns_rejected(self, tmp_path):
         source = tmp_path / "src_dir"
         source.mkdir()

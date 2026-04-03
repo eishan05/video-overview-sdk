@@ -978,6 +978,14 @@ class TestConstructorValidation:
         with pytest.raises(VideoAssemblyError, match="crossfade"):
             VideoAssembler(crossfade_seconds=-1.0)
 
+    def test_crossfade_over_60_rejected(self, mocker):
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        with pytest.raises(VideoAssemblyError, match="crossfade"):
+            VideoAssembler(crossfade_seconds=61.0)
+
     def test_negative_zoom_rejected(self, mocker):
         mocker.patch(
             "video_overview.video.assembler.shutil.which",

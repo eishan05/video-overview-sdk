@@ -65,7 +65,7 @@ class OverviewConfig(BaseModel):
     video_width: PositiveInt = 1920
     video_height: PositiveInt = 1080
     video_fps: PositiveInt = 30
-    crossfade_seconds: NonNegativeFloat = 0.5
+    crossfade_seconds: NonNegativeFloat = Field(default=0.5, le=60.0)
     ken_burns_zoom_percent: NonNegativeFloat = 5.0
 
     @field_validator("video_width", "video_height")
