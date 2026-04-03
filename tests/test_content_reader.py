@@ -483,3 +483,17 @@ class TestIncludePatternMatchesNothing:
 
         with pytest.raises(ValueError, match="include"):
             reader.read(tmp_path, include=["*.rs", "*.go", "*.java"])
+
+    def test_no_raise_when_include_is_empty_list(self, reader, tmp_path):
+        """include=[] means 'include nothing' and should not raise ValueError."""
+        (tmp_path / "main.py").write_text("x = 1")
+        result = reader.read(tmp_path, include=[])
+        assert result["total_files"] == 0
+
+    def test_no_raise_when_include_matches_but_exclude_removes_all(
+        self, reader, tmp_path
+    ):
+        """If include matches files but exclude removes them, should not raise."""
+        (tmp_path / "main.py").write_text("x = 1")
+        result = reader.read(tmp_path, include=["*.py"], exclude=["*.py"])
+        assert result["total_files"] == 0

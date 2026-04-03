@@ -605,13 +605,13 @@ class TestIncludePatternMatchesNothing:
         assert result.exit_code == 1
         assert "include" in result.output.lower() or "no files" in result.output.lower()
 
-    def test_include_no_match_does_not_call_script_gen(
+    def test_include_no_match_error_mentions_patterns(
         self, runner, source_dir, output_file
     ):
-        """When include patterns match nothing, script generation should not run."""
+        """Error output should include the specific patterns."""
         with patch(
             "video_overview.cli.create_overview",
-            side_effect=ValueError("No files matched include patterns: *.rs"),
+            side_effect=ValueError("No files matched include patterns: *.rs, *.go"),
         ):
             result = runner.invoke(
                 main,
@@ -623,10 +623,13 @@ class TestIncludePatternMatchesNothing:
                     str(output_file),
                     "--include",
                     "*.rs",
+                    "--include",
+                    "*.go",
                 ],
             )
         assert result.exit_code == 1
-        assert "include" in result.output.lower() or "no files" in result.output.lower()
+        assert "*.rs" in result.output
+        assert "*.go" in result.output
 
 
 class TestHelpText:
