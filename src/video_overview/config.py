@@ -62,6 +62,11 @@ class OverviewConfig(BaseModel):
     max_tokens_per_batch: PositiveInt = 8000
     max_segments_per_batch: PositiveInt = 13
     audio_max_attempts: PositiveInt = 3
+    video_width: PositiveInt = 1920
+    video_height: PositiveInt = 1080
+    video_fps: PositiveInt = 30
+    crossfade_seconds: NonNegativeFloat = 0.5
+    ken_burns_zoom_percent: NonNegativeFloat = 5.0
 
     @field_validator("source_dir")
     @classmethod

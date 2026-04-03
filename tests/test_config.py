@@ -155,6 +155,18 @@ class TestOverviewConfigDefaults:
         cfg = OverviewConfig(source_dir=source, output=output, topic="Testing")
         assert cfg.cache_dir == source / ".video_overview_cache"
 
+    def test_video_constants_defaults(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source, output=tmp_path / "out.mp4", topic="Test"
+        )
+        assert cfg.video_width == 1920
+        assert cfg.video_height == 1080
+        assert cfg.video_fps == 30
+        assert cfg.crossfade_seconds == 0.5
+        assert cfg.ken_burns_zoom_percent == 5.0
+
 
 # ---------------------------------------------------------------------------
 # OverviewConfig – all fields specified
@@ -556,6 +568,113 @@ class TestOverviewConfigCacheDir:
                 output=tmp_path / "out.mp4",
                 topic="Test",
             )
+
+
+# ---------------------------------------------------------------------------
+# OverviewConfig – video constants
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewConfigVideoConstants:
+    """Tests for configurable video constant fields."""
+
+    def test_custom_video_constants(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            video_width=1280,
+            video_height=720,
+            video_fps=24,
+            crossfade_seconds=1.0,
+            ken_burns_zoom_percent=10.0,
+        )
+        assert cfg.video_width == 1280
+        assert cfg.video_height == 720
+        assert cfg.video_fps == 24
+        assert cfg.crossfade_seconds == 1.0
+        assert cfg.ken_burns_zoom_percent == 10.0
+
+    def test_zero_video_width_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                video_width=0,
+            )
+
+    def test_zero_video_height_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                video_height=0,
+            )
+
+    def test_zero_video_fps_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                video_fps=0,
+            )
+
+    def test_negative_crossfade_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                crossfade_seconds=-0.5,
+            )
+
+    def test_negative_ken_burns_rejected(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        with pytest.raises(ValidationError):
+            OverviewConfig(
+                source_dir=source,
+                output=tmp_path / "out.mp4",
+                topic="Test",
+                ken_burns_zoom_percent=-1.0,
+            )
+
+    def test_zero_crossfade_accepted(self, tmp_path):
+        """crossfade_seconds=0 should be valid (no crossfade)."""
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            crossfade_seconds=0.0,
+        )
+        assert cfg.crossfade_seconds == 0.0
+
+    def test_zero_ken_burns_accepted(self, tmp_path):
+        """ken_burns_zoom_percent=0 should be valid (no zoom)."""
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            ken_burns_zoom_percent=0.0,
+        )
+        assert cfg.ken_burns_zoom_percent == 0.0
 
 
 # ---------------------------------------------------------------------------

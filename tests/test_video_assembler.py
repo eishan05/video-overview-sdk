@@ -39,6 +39,22 @@ def assembler(mocker) -> VideoAssembler:
 
 
 @pytest.fixture()
+def custom_assembler(mocker) -> VideoAssembler:
+    """VideoAssembler with custom video parameters."""
+    mocker.patch(
+        "video_overview.video.assembler.shutil.which",
+        return_value="/usr/bin/ffmpeg",
+    )
+    return VideoAssembler(
+        width=1280,
+        height=720,
+        fps=24,
+        crossfade_seconds=1.0,
+        ken_burns_zoom_percent=10.0,
+    )
+
+
+@pytest.fixture()
 def audio_path(tmp_path) -> Path:
     """Create a dummy audio file."""
     p = tmp_path / "input.wav"
@@ -703,3 +719,204 @@ class TestFilterComplexConstruction:
 
         cmd = mock_run.call_args[0][0]
         assert "-filter_complex" in cmd
+
+
+# ---------------------------------------------------------------------------
+# Configurable video constants
+# ---------------------------------------------------------------------------
+
+
+class TestConfigurableVideoConstants:
+    """Tests for configurable video constants."""
+
+    def test_default_values_match_original_constants(self, assembler):
+        """Default-constructed assembler should use the original constant values."""
+        assert assembler._width == 1920
+        assert assembler._height == 1080
+        assert assembler._fps == 30
+        assert assembler._crossfade_duration == 0.5
+        # 5% zoom -> internal multiplier 1.05
+        assert abs(assembler._max_zoom - 1.05) < 1e-9
+
+    def test_custom_values_stored(self, custom_assembler):
+        """Custom-constructed assembler should store the provided values."""
+        assert custom_assembler._width == 1280
+        assert custom_assembler._height == 720
+        assert custom_assembler._fps == 24
+        assert custom_assembler._crossfade_duration == 1.0
+        # 10% zoom -> internal multiplier 1.10
+        assert abs(custom_assembler._max_zoom - 1.10) < 1e-9
+
+    def test_custom_resolution_in_filter(
+        self, custom_assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Custom resolution should appear in the ffmpeg filter_complex."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        custom_assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        assert "1280" in cmd_str
+        assert "720" in cmd_str
+        # Should NOT contain the old defaults
+        assert "1920" not in cmd_str
+        assert "1080" not in cmd_str
+
+    def test_custom_fps_in_filter(
+        self, custom_assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Custom fps should appear in the zoompan filter and output -r flag."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        custom_assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        assert "fps=24" in cmd_str
+        # Output rate flag
+        assert "-r" in cmd
+        r_idx = cmd.index("-r")
+        assert cmd[r_idx + 1] == "24"
+
+    def test_custom_fps_frame_count(
+        self, custom_assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Frame count should use the custom fps (5.0s * 24fps = 120 frames)."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        custom_assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        assert "d=120" in cmd_str
+
+    def test_custom_crossfade_in_xfade(
+        self, custom_assembler, audio_path, tmp_path, mocker
+    ):
+        """Custom crossfade_seconds should appear in xfade duration."""
+        images = []
+        for i in range(2):
+            p = tmp_path / f"img_{i:03d}.png"
+            p.write_bytes(b"\x89PNG" + b"\x00" * 100)
+            images.append(p)
+
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        custom_assembler.assemble(
+            audio_path=audio_path,
+            image_paths=images,
+            segment_durations=[5.0, 5.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        assert "duration=1.0" in cmd_str
+
+    def test_custom_ken_burns_zoom_in_filter(
+        self, custom_assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Custom ken_burns_zoom_percent=10.0 should produce max_zoom=1.10 in filter."""
+        output = tmp_path / "output.mp4"
+        mock_run = mocker.patch(
+            "video_overview.video.assembler.subprocess.run",
+            return_value=MagicMock(returncode=0, stderr=""),
+        )
+
+        custom_assembler.assemble(
+            audio_path=audio_path,
+            image_paths=single_image,
+            segment_durations=[5.0],
+            output_path=output,
+            format="video",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        cmd_str = " ".join(str(c) for c in cmd)
+        assert "1.1" in cmd_str
+
+    def test_crossfade_validation_uses_custom_duration(self, mocker, tmp_path):
+        """Crossfade validation should use custom crossfade_seconds."""
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        asm = VideoAssembler(crossfade_seconds=2.0)
+
+        audio_path = tmp_path / "input.wav"
+        audio_path.write_bytes(b"RIFF" + b"\x00" * 100)
+        images = []
+        for i in range(2):
+            p = tmp_path / f"img_{i:03d}.png"
+            p.write_bytes(b"\x89PNG" + b"\x00" * 100)
+            images.append(p)
+
+        # Duration 1.5s < crossfade 2.0s should raise
+        with pytest.raises(VideoAssemblyError, match="crossfade"):
+            asm.assemble(
+                audio_path=audio_path,
+                image_paths=images,
+                segment_durations=[1.5, 5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+
+    def test_min_duration_uses_custom_fps(self, mocker, tmp_path):
+        """Minimum duration validation should use custom fps."""
+        mocker.patch(
+            "video_overview.video.assembler.shutil.which",
+            return_value="/usr/bin/ffmpeg",
+        )
+        # At 10fps, minimum duration is 0.1s
+        asm = VideoAssembler(fps=10)
+
+        audio_path = tmp_path / "input.wav"
+        audio_path.write_bytes(b"RIFF" + b"\x00" * 100)
+        img = tmp_path / "img.png"
+        img.write_bytes(b"\x89PNG" + b"\x00" * 100)
+
+        # 0.05s < 1/10fps = 0.1s should raise
+        with pytest.raises(VideoAssemblyError, match="too short"):
+            asm.assemble(
+                audio_path=audio_path,
+                image_paths=[img],
+                segment_durations=[0.05],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )

@@ -880,3 +880,48 @@ class TestMaxDurationTruncation:
         visual_call = all_mocks["visual_inst"].generate.call_args
         visual_script = visual_call.kwargs.get("script") or visual_call.args[0]
         assert len(visual_script.segments) == 5
+
+
+# ---------------------------------------------------------------------------
+# Tests: VideoAssembler receives video config from OverviewConfig
+# ---------------------------------------------------------------------------
+
+
+class TestVideoAssemblerConfigThreading:
+    """Verify core.py threads video config fields to VideoAssembler constructor."""
+
+    def test_default_config_passes_defaults_to_assembler(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video")
+        create_overview(config=config)
+
+        all_mocks["assembler_cls"].assert_called_once_with(
+            width=1920,
+            height=1080,
+            fps=30,
+            crossfade_seconds=0.5,
+            ken_burns_zoom_percent=5.0,
+        )
+
+    def test_custom_config_passes_custom_to_assembler(self, tmp_source, all_mocks):
+        from video_overview.core import create_overview
+
+        config = _make_config(
+            tmp_source,
+            format="video",
+            video_width=1280,
+            video_height=720,
+            video_fps=24,
+            crossfade_seconds=1.0,
+            ken_burns_zoom_percent=10.0,
+        )
+        create_overview(config=config)
+
+        all_mocks["assembler_cls"].assert_called_once_with(
+            width=1280,
+            height=720,
+            fps=24,
+            crossfade_seconds=1.0,
+            ken_burns_zoom_percent=10.0,
+        )
