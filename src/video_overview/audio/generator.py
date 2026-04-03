@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import shutil
 import subprocess
 import time
@@ -14,6 +15,8 @@ from google.genai import types
 
 from video_overview.config import Script
 from video_overview.duration import estimate_segment_duration
+
+logger = logging.getLogger(__name__)
 
 _MODEL = "gemini-2.5-flash-preview-tts"
 _BATCH_SIZE = 13  # Target ~10-15 segments per batch; TODO: also budget by token count
@@ -229,6 +232,13 @@ class AudioGenerator:
                 last_error = exc
                 if attempt < _MAX_RETRIES - 1:
                     delay = _BASE_DELAY * (2**attempt)
+                    logger.warning(
+                        "TTS API retry attempt %d/%d after error: %s (delay=%ds)",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        exc,
+                        delay,
+                    )
                     time.sleep(delay)
 
         raise AudioGenerationError(

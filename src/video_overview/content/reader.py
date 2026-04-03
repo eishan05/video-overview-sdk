@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 from pathlib import Path, PurePosixPath
 
 import pathspec
+
+logger = logging.getLogger(__name__)
 
 # Extensions that are always skipped (binary/compiled)
 _SKIP_EXTENSIONS = frozenset(
@@ -287,10 +290,18 @@ class ContentReader:
             if any(
                 part in _SKIP_DIRS or part.endswith(".egg-info") for part in rel_parts
             ):
+                logger.debug(
+                    "Skipping file in excluded directory: %s",
+                    path.relative_to(source_dir).as_posix(),
+                )
                 continue
 
             # Skip files with known binary extensions
             if path.suffix.lower() in _SKIP_EXTENSIONS:
+                logger.debug(
+                    "Skipping file with binary extension: %s",
+                    path.relative_to(source_dir).as_posix(),
+                )
                 continue
 
             rel_path_str = path.relative_to(source_dir).as_posix()
@@ -331,11 +342,19 @@ class ContentReader:
                 continue
 
             if _is_binary(raw):
+                logger.debug(
+                    "Skipping binary content: %s",
+                    path.relative_to(source_dir).as_posix(),
+                )
                 continue
 
             try:
                 text = raw.decode("utf-8")
             except UnicodeDecodeError:
+                logger.debug(
+                    "Skipping file with unicode decode failure: %s",
+                    path.relative_to(source_dir).as_posix(),
+                )
                 continue
 
             rel_path = path.relative_to(source_dir).as_posix()
@@ -405,5 +424,6 @@ class ContentReader:
         try:
             text = gitignore_path.read_text(encoding="utf-8")
             return pathspec.PathSpec.from_lines("gitignore", text.splitlines())
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Failed to parse .gitignore at %s: %s", gitignore_path, exc)
             return None
