@@ -181,10 +181,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
             "GOOGLE_API_KEY environment variable."
         )
 
-    # ---- 2. Create cache directory ----
-    config.cache_dir.mkdir(parents=True, exist_ok=True)
-
-    # ---- 3. Read content ----
+    # ---- 2. Read content ----
     _progress("Reading content from source directory...")
     reader = ContentReader()
     content_bundle = reader.read(
@@ -193,13 +190,16 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         exclude=config.exclude,
     )
 
-    # ---- 3b. Fail fast on empty content ----
-    if content_bundle["total_files"] == 0:
+    # ---- 2b. Fail fast on empty content ----
+    if content_bundle["total_files"] == 0 or content_bundle["total_chars"] == 0:
         raise ValueError(
             f"No readable files found in {config.source_dir}. "
             "The directory may be empty, contain only binary files, "
             "or all files were excluded by filters."
         )
+
+    # ---- 3. Create cache directory ----
+    config.cache_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- 4. Generate script ----
     _progress("Generating script...")
