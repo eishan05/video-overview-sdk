@@ -971,36 +971,100 @@ class TestCreateStaticFrame:
     """Tests for the _create_static_frame helper."""
 
     def test_creates_png_file(self, tmp_path):
-        """The helper should produce a PNG file using ffmpeg."""
+        """The helper should produce a PNG file via ffmpeg (mocked)."""
         from video_overview.core import _create_static_frame
 
-        frame_path = _create_static_frame(
-            cache_dir=tmp_path,
-            width=1920,
-            height=1080,
-        )
-        assert frame_path.exists()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            frame_path = _create_static_frame(
+                cache_dir=tmp_path,
+                width=1920,
+                height=1080,
+            )
         assert frame_path.suffix == ".png"
+        assert frame_path.parent == tmp_path
+
+    def test_ffmpeg_called_with_correct_dimensions(self, tmp_path):
+        """The ffmpeg command should use the requested width and height."""
+        from video_overview.core import _create_static_frame
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch(
+            "video_overview.core.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            _create_static_frame(cache_dir=tmp_path, width=1280, height=720)
+
+        cmd = mock_run.call_args[0][0]
+        # The lavfi color source should contain the dimensions
+        color_arg = [a for a in cmd if "color=" in a][0]
+        assert "1280x720" in color_arg
 
     def test_reuses_cached_frame(self, tmp_path):
         """If the frame already exists, ffmpeg should not be called again."""
         from video_overview.core import _create_static_frame
 
-        frame_path = _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
-        # Call again -- should return same path without calling ffmpeg
-        with patch("subprocess.run") as mock_run:
-            frame_path_2 = _create_static_frame(
+        # Pre-create the cache file
+        expected = tmp_path / "static_frame_1920x1080.png"
+        expected.write_bytes(b"fake png")
+
+        with patch("video_overview.core.subprocess.run") as mock_run:
+            frame_path = _create_static_frame(
                 cache_dir=tmp_path, width=1920, height=1080
             )
         mock_run.assert_not_called()
-        assert frame_path == frame_path_2
+        assert frame_path == expected
 
     def test_frame_dimensions_in_filename(self, tmp_path):
         """Frame filename should encode the dimensions for cache correctness."""
         from video_overview.core import _create_static_frame
 
-        frame_path = _create_static_frame(cache_dir=tmp_path, width=1280, height=720)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            frame_path = _create_static_frame(
+                cache_dir=tmp_path, width=1280, height=720
+            )
         assert "1280x720" in frame_path.name
+
+    def test_ffmpeg_not_found_raises_video_assembly_error(self, tmp_path):
+        """FileNotFoundError from ffmpeg should raise VideoAssemblyError."""
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        with patch(
+            "video_overview.core.subprocess.run",
+            side_effect=FileNotFoundError("ffmpeg not found"),
+        ):
+            with pytest.raises(VideoAssemblyError, match="ffmpeg"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
+
+    def test_ffmpeg_timeout_raises_video_assembly_error(self, tmp_path):
+        """TimeoutExpired from ffmpeg should raise VideoAssemblyError."""
+        import subprocess
+
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        with patch(
+            "video_overview.core.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=30),
+        ):
+            with pytest.raises(VideoAssemblyError, match="timed out"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
+
+    def test_ffmpeg_nonzero_exit_raises_video_assembly_error(self, tmp_path):
+        """Non-zero ffmpeg exit code should raise VideoAssemblyError."""
+        from video_overview.core import _create_static_frame
+        from video_overview.video.assembler import VideoAssemblyError
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "some error"
+        with patch("video_overview.core.subprocess.run", return_value=mock_result):
+            with pytest.raises(VideoAssemblyError, match="ffmpeg failed"):
+                _create_static_frame(cache_dir=tmp_path, width=1920, height=1080)
 
 
 # ---------------------------------------------------------------------------

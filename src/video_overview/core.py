@@ -13,7 +13,7 @@ from video_overview.config import OverviewConfig, OverviewResult, Script
 from video_overview.content.reader import ContentReader
 from video_overview.duration import truncate_segments
 from video_overview.script.generator import ScriptGenerator
-from video_overview.video.assembler import VideoAssembler
+from video_overview.video.assembler import VideoAssembler, VideoAssemblyError
 from video_overview.visuals.generator import VisualGenerator
 
 
@@ -58,9 +58,20 @@ def _create_static_frame(
         "1",
         str(frame_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except FileNotFoundError as exc:
+        raise VideoAssemblyError("ffmpeg is not installed or not on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise VideoAssemblyError("ffmpeg timed out creating static frame") from exc
+    except OSError as exc:
+        raise VideoAssemblyError(f"ffmpeg execution error: {exc}") from exc
+
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to create static frame: {result.stderr}")
+        raise VideoAssemblyError(
+            f"ffmpeg failed creating static frame "
+            f"(exit code {result.returncode}): {result.stderr}"
+        )
     return frame_path
 
 
@@ -198,54 +209,38 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         script = Script(title=script.title, segments=truncated)
 
     # ---- 5. Generate audio (+ visuals for video mode) ----
-    if config.format == "video" and config.skip_visuals:
-        _progress("Generating audio (skipping visual generation)...")
-        audio_gen = AudioGenerator(api_key=api_key)
-        audio_result = audio_gen.generate(
-            script=script,
-            host_voice=config.host_voice,
-            expert_voice=config.expert_voice,
-            narrator_voice=config.narrator_voice,
-            cache_dir=config.cache_dir,
-            max_tokens_per_batch=config.max_tokens_per_batch,
-            max_segments_per_batch=config.max_segments_per_batch,
-            max_attempts=config.audio_max_attempts,
-        )
-        audio_path, segment_durations = audio_result
+    if config.format == "video":
+        if config.skip_visuals:
+            _progress("Generating audio (skipping visual generation)...")
+            audio_gen = AudioGenerator(api_key=api_key)
+            audio_result = audio_gen.generate(
+                script=script,
+                host_voice=config.host_voice,
+                expert_voice=config.expert_voice,
+                narrator_voice=config.narrator_voice,
+                cache_dir=config.cache_dir,
+                max_tokens_per_batch=config.max_tokens_per_batch,
+                max_segments_per_batch=config.max_segments_per_batch,
+                max_attempts=config.audio_max_attempts,
+            )
+            audio_path, segment_durations = audio_result
 
-        _progress("Creating static frame...")
-        static_frame = _create_static_frame(
-            cache_dir=config.cache_dir,
-            width=config.video_width,
-            height=config.video_height,
-        )
-        image_paths = [static_frame] * len(script.segments)
+            _progress("Creating static frame...")
+            static_frame = _create_static_frame(
+                cache_dir=config.cache_dir,
+                width=config.video_width,
+                height=config.video_height,
+            )
+            image_paths = [static_frame] * len(script.segments)
+        else:
+            _progress("Generating audio and visuals concurrently...")
+            audio_gen = AudioGenerator(api_key=api_key)
+            visual_gen = VisualGenerator(api_key=api_key)
 
-        # ---- 6. Assemble video ----
-        _progress("Assembling video...")
-        assembler = VideoAssembler(
-            width=config.video_width,
-            height=config.video_height,
-            fps=config.video_fps,
-            crossfade_seconds=config.crossfade_seconds,
-            ken_burns_zoom_percent=config.ken_burns_zoom_percent,
-        )
-        output_path = assembler.assemble(
-            audio_path=audio_path,
-            image_paths=image_paths,
-            segment_durations=segment_durations,
-            output_path=config.output,
-            format=config.format,
-        )
-    elif config.format == "video":
-        _progress("Generating audio and visuals concurrently...")
-        audio_gen = AudioGenerator(api_key=api_key)
-        visual_gen = VisualGenerator(api_key=api_key)
-
-        audio_result, image_paths = _run_async(
-            _run_audio_and_visuals(audio_gen, visual_gen, script, config)
-        )
-        audio_path, segment_durations = audio_result
+            audio_result, image_paths = _run_async(
+                _run_audio_and_visuals(audio_gen, visual_gen, script, config)
+            )
+            audio_path, segment_durations = audio_result
 
         # ---- 6. Assemble video ----
         _progress("Assembling video...")
