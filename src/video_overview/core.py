@@ -201,6 +201,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
         topic=config.topic,
         mode=config.mode,
         llm_backend=config.llm_backend,
+        max_duration_minutes=config.max_duration_minutes,
     )
 
     # ---- 4b. Truncate script to honour max_duration_minutes ----

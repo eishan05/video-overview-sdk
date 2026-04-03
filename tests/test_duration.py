@@ -237,3 +237,96 @@ class TestExactKeptSegmentCounts:
         ]
         result = truncate_segments(segments, max_duration_minutes=3)
         assert len(result) == 4
+
+
+# ---------------------------------------------------------------------------
+# Tests: compute_duration_budget
+# ---------------------------------------------------------------------------
+
+
+class TestComputeDurationBudget:
+    """Unit tests for the duration budget calculator."""
+
+    def test_returns_dict_with_expected_keys(self):
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=5)
+        assert "max_words" in budget
+        assert "max_segments" in budget
+        assert "target_minutes" in budget
+
+    def test_target_minutes_matches_input(self):
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=7)
+        assert budget["target_minutes"] == 7
+
+    def test_max_words_proportional_to_duration(self):
+        """At ~150 words/minute, 5 minutes should yield ~750 words."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=5)
+        assert budget["max_words"] == 750
+
+    def test_max_words_for_10_minutes(self):
+        """10 minutes => ~1500 words."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=10)
+        assert budget["max_words"] == 1500
+
+    def test_max_words_for_1_minute(self):
+        """1 minute => ~150 words."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=1)
+        assert budget["max_words"] == 150
+
+    def test_max_segments_scales_with_duration(self):
+        """Longer duration allows more segments."""
+        from video_overview.duration import compute_duration_budget
+
+        short = compute_duration_budget(max_duration_minutes=2)
+        long = compute_duration_budget(max_duration_minutes=10)
+        assert long["max_segments"] > short["max_segments"]
+
+    def test_max_segments_minimum_is_2(self):
+        """Even very short durations should allow at least 2 segments."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=1)
+        assert budget["max_segments"] >= 2
+
+    def test_max_segments_capped_at_given_cap(self):
+        """Segments should not exceed the explicit max_segments cap."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=60, max_segments_cap=15)
+        assert budget["max_segments"] <= 15
+
+    def test_none_duration_returns_none(self):
+        """None max_duration_minutes should return None budget."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=None)
+        assert budget is None
+
+    def test_zero_raises_value_error(self):
+        from video_overview.duration import compute_duration_budget
+
+        with pytest.raises(ValueError, match="positive"):
+            compute_duration_budget(max_duration_minutes=0)
+
+    def test_negative_raises_value_error(self):
+        from video_overview.duration import compute_duration_budget
+
+        with pytest.raises(ValueError, match="positive"):
+            compute_duration_budget(max_duration_minutes=-3)
+
+    def test_all_values_are_integers(self):
+        """max_words and max_segments should be integers."""
+        from video_overview.duration import compute_duration_budget
+
+        budget = compute_duration_budget(max_duration_minutes=5)
+        assert isinstance(budget["max_words"], int)
+        assert isinstance(budget["max_segments"], int)

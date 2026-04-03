@@ -19,6 +19,53 @@ def estimate_segment_duration(text: str) -> float:
     return max(_MIN_DURATION, len(text) / _CHARS_PER_SECOND)
 
 
+# Average speaking rate: ~150 words per minute
+_WORDS_PER_MINUTE = 150
+
+# Approximate average words per segment (assuming ~30s per segment)
+_SECONDS_PER_SEGMENT = 30
+
+
+def compute_duration_budget(
+    max_duration_minutes: float | None,
+    max_segments_cap: int = 20,
+) -> dict | None:
+    """Derive an approximate word and segment budget from a duration limit.
+
+    Args:
+        max_duration_minutes: Target maximum duration in minutes.
+            Returns ``None`` when this is ``None``.
+        max_segments_cap: Hard upper bound on the segment count
+            regardless of duration.
+
+    Returns:
+        A dict with ``max_words``, ``max_segments``, and
+        ``target_minutes``; or ``None`` if *max_duration_minutes* is
+        ``None``.
+
+    Raises:
+        ValueError: If *max_duration_minutes* is non-positive.
+    """
+    if max_duration_minutes is None:
+        return None
+
+    if max_duration_minutes <= 0:
+        raise ValueError(
+            f"max_duration_minutes must be positive, got {max_duration_minutes}"
+        )
+
+    max_words = int(max_duration_minutes * _WORDS_PER_MINUTE)
+    max_seconds = max_duration_minutes * 60.0
+    derived_segments = max(2, int(max_seconds / _SECONDS_PER_SEGMENT))
+    max_segments = min(derived_segments, max_segments_cap)
+
+    return {
+        "max_words": max_words,
+        "max_segments": max_segments,
+        "target_minutes": max_duration_minutes,
+    }
+
+
 def truncate_segments(
     segments: list[ScriptSegment],
     max_duration_minutes: float | None,

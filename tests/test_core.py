@@ -193,6 +193,17 @@ class TestFullPipelineVideoMode:
         assert call_kwargs.kwargs["topic"] == "Test Topic"
         assert call_kwargs.kwargs["mode"] == "conversation"
 
+    def test_passes_max_duration_to_script_generator(self, tmp_source, all_mocks):
+        """create_overview should pass max_duration_minutes to ScriptGenerator."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source, format="video", max_duration_minutes=7)
+        create_overview(config=config)
+
+        gen = all_mocks["script_generator"]
+        call_kwargs = gen.generate.call_args
+        assert call_kwargs.kwargs["max_duration_minutes"] == 7
+
     def test_calls_audio_generator(self, tmp_source, all_mocks):
         from video_overview.core import create_overview
 
