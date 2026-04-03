@@ -781,8 +781,14 @@ class TestMaxDurationTruncation:
 
         # The script passed to audio generator should have only 3 segments
         audio_call = all_mocks["audio_inst"].generate.call_args
-        script_arg = audio_call.kwargs.get("script") or audio_call.args[0]
-        assert len(script_arg.segments) == 3
+        audio_script = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(audio_script.segments) == 3
+
+        # The script passed to visual generator should also have only 3 segments
+        visual_call = all_mocks["visual_inst"].generate.call_args
+        visual_script = visual_call.kwargs.get("script") or visual_call.args[0]
+        assert len(visual_script.segments) == 3
+
         assert result.segments_count == 3
 
     def test_truncates_segments_for_audio_mode(self, tmp_source, all_mocks):
@@ -817,18 +823,20 @@ class TestMaxDurationTruncation:
         assert result.segments_count == 3
 
     def test_always_keeps_at_least_one_segment(self, tmp_source, all_mocks):
-        """Even when single segment exceeds limit, it is kept."""
+        """Even when all segments exceed the limit, keep the first one."""
         from video_overview.core import create_overview
 
-        # One segment of 10000 chars = 800s = 13+ minutes
+        # 5 segments, each 10000 chars = 800s = 13+ minutes
+        # Limit = 1 minute, so even the first exceeds, but we keep it
         long_script = Script(
             title="Long",
             segments=[
                 ScriptSegment(
-                    speaker="Host",
+                    speaker="Host" if i % 2 == 0 else "Expert",
                     text="X" * 10000,
-                    visual_prompt="prompt",
+                    visual_prompt=f"prompt {i}",
                 )
+                for i in range(5)
             ],
         )
         all_mocks["script_generator"].generate.return_value = long_script
@@ -843,7 +851,11 @@ class TestMaxDurationTruncation:
         config = _make_config(tmp_source, format="video", max_duration_minutes=1)
         result = create_overview(config=config)
 
+        # Only 1 segment kept despite 5 being available
         assert result.segments_count == 1
+        audio_call = all_mocks["audio_inst"].generate.call_args
+        script_arg = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(script_arg.segments) == 1
 
     def test_exact_kept_count_5min_limit(self, tmp_source, all_mocks):
         """10 segments * 60s each, limit 5min => keep exactly 5."""
@@ -862,5 +874,9 @@ class TestMaxDurationTruncation:
         create_overview(config=config)
 
         audio_call = all_mocks["audio_inst"].generate.call_args
-        script_arg = audio_call.kwargs.get("script") or audio_call.args[0]
-        assert len(script_arg.segments) == 5
+        audio_script = audio_call.kwargs.get("script") or audio_call.args[0]
+        assert len(audio_script.segments) == 5
+
+        visual_call = all_mocks["visual_inst"].generate.call_args
+        visual_script = visual_call.kwargs.get("script") or visual_call.args[0]
+        assert len(visual_script.segments) == 5

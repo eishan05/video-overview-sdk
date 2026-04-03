@@ -146,6 +146,22 @@ class TestTruncateSegments:
         result = truncate_segments(segments, max_duration_minutes=None)
         assert len(result) == 5
 
+    def test_zero_max_duration_raises_value_error(self):
+        """Zero max_duration_minutes is invalid."""
+        from video_overview.duration import truncate_segments
+
+        segments = [_seg("Hello")]
+        with pytest.raises(ValueError, match="positive"):
+            truncate_segments(segments, max_duration_minutes=0)
+
+    def test_negative_max_duration_raises_value_error(self):
+        """Negative max_duration_minutes is invalid."""
+        from video_overview.duration import truncate_segments
+
+        segments = [_seg("Hello")]
+        with pytest.raises(ValueError, match="positive"):
+            truncate_segments(segments, max_duration_minutes=-5)
+
 
 # ---------------------------------------------------------------------------
 # Tests: Exact kept segment counts for various durations

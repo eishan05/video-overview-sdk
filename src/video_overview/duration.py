@@ -33,6 +33,11 @@ def truncate_segments(
     if max_duration_minutes is None:
         return list(segments)
 
+    if max_duration_minutes <= 0:
+        raise ValueError(
+            f"max_duration_minutes must be positive, got {max_duration_minutes}"
+        )
+
     max_seconds = max_duration_minutes * 60.0
     cumulative = 0.0
     keep = 0
