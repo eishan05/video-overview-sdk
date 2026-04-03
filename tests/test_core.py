@@ -244,10 +244,16 @@ class TestFullPipelineVideoMode:
         def track_read(*a, **kw):
             call_order.append("read")
             return {
-                "directory_structure": "src/\n",
-                "files": [],
-                "total_files": 0,
-                "total_chars": 0,
+                "directory_structure": "src/\n  main.py\n",
+                "files": [
+                    {
+                        "path": "main.py",
+                        "content": "print('hello')",
+                        "language": "python",
+                    }
+                ],
+                "total_files": 1,
+                "total_chars": 14,
             }
 
         reader.read.side_effect = track_read
@@ -507,6 +513,169 @@ class TestAPIKeyValidation:
         with patch.dict("os.environ", {}, clear=True):
             with pytest.raises(ValueError, match="(?i)api.key"):
                 create_overview(config=config)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Empty source content (fail fast)
+# ---------------------------------------------------------------------------
+
+
+class TestEmptySourceContent:
+    """create_overview should raise ValueError when the source directory
+    yields zero readable files -- covering empty directories, binary-only
+    directories, and exclude-all filter combinations."""
+
+    def test_raises_on_empty_directory(self, tmp_source, all_mocks):
+        """Empty source directory should raise ValueError before script gen."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
+    def test_raises_on_binary_only_directory(self, tmp_source, all_mocks):
+        """Directory containing only binary files should raise ValueError."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n  image.png\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
+    def test_raises_on_exclude_all(self, tmp_source, all_mocks):
+        """When exclude filters remove all files, should raise ValueError."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n  main.py\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
+    def test_script_generator_not_called_on_empty_content(self, tmp_source, all_mocks):
+        """Script generation should not be attempted with empty content."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError):
+            create_overview(config=config)
+
+        all_mocks["script_generator"].generate.assert_not_called()
+
+    def test_error_message_mentions_source_dir(self, tmp_source, all_mocks):
+        """The error message should mention the source directory."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match=str(config.source_dir)):
+            create_overview(config=config)
+
+    def test_raises_on_zero_total_chars(self, tmp_source, all_mocks):
+        """Files present but all empty (zero chars) should raise ValueError."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n  empty.py\n",
+            "files": [
+                {
+                    "path": "empty.py",
+                    "content": "",
+                    "language": "python",
+                }
+            ],
+            "total_files": 1,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
+    def test_raises_on_whitespace_only_files(self, tmp_source, all_mocks):
+        """Files containing only whitespace should be treated as empty."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n  blank.py\n",
+            "files": [
+                {
+                    "path": "blank.py",
+                    "content": "   \n\n  \t  \n",
+                    "language": "python",
+                }
+            ],
+            "total_files": 1,
+            "total_chars": 11,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
+    def test_cache_dir_not_created_on_empty_content(self, tmp_source, all_mocks):
+        """Cache directory should not be created when content is empty."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n",
+            "files": [],
+            "total_files": 0,
+            "total_chars": 0,
+        }
+        config = _make_config(tmp_source)
+        cache_dir = config.cache_dir
+
+        # Remove cache dir if it exists
+        if cache_dir.exists():
+            import shutil
+
+            shutil.rmtree(cache_dir)
+
+        with pytest.raises(ValueError):
+            create_overview(config=config)
+
+        assert not cache_dir.exists()
+
+    def test_nonzero_total_files_does_not_raise(self, tmp_source, all_mocks):
+        """Normal content bundles (total_files > 0) should proceed normally."""
+        from video_overview.core import create_overview
+
+        config = _make_config(tmp_source)
+        # all_mocks provides a default bundle with total_files=1
+        result = create_overview(config=config)
+        assert isinstance(result, OverviewResult)
 
 
 # ---------------------------------------------------------------------------
