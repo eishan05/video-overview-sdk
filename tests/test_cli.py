@@ -632,6 +632,75 @@ class TestIncludePatternMatchesNothing:
         assert "*.go" in result.output
 
 
+class TestSkipVisualsOption:
+    """Test --skip-visuals CLI flag."""
+
+    def test_skip_visuals_flag_accepted(
+        self, runner, source_dir, output_file, mock_result
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--skip-visuals",
+                ],
+            )
+        assert result.exit_code == 0
+
+    def test_skip_visuals_passed_to_config(
+        self, runner, source_dir, output_file, mock_result
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ) as mock_fn:
+            runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--skip-visuals",
+                ],
+            )
+        config = mock_fn.call_args[1]["config"]
+        assert config.skip_visuals is True
+
+    def test_skip_visuals_default_is_false(
+        self, runner, source_dir, output_file, mock_result
+    ):
+        with patch(
+            "video_overview.cli.create_overview",
+            return_value=mock_result,
+        ) as mock_fn:
+            runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                ],
+            )
+        config = mock_fn.call_args[1]["config"]
+        assert config.skip_visuals is False
+
+    def test_skip_visuals_in_help(self, runner):
+        result = runner.invoke(main, ["--help"])
+        assert "--skip-visuals" in result.output
+
+
 class TestHelpText:
     """Test that --help works."""
 

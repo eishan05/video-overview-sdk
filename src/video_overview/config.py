@@ -67,6 +67,7 @@ class OverviewConfig(BaseModel):
     video_fps: PositiveInt = 30
     crossfade_seconds: NonNegativeFloat = Field(default=0.5, le=60.0)
     ken_burns_zoom_percent: NonNegativeFloat = 5.0
+    skip_visuals: bool = False
 
     @field_validator("video_width", "video_height")
     @classmethod
@@ -113,6 +114,16 @@ class OverviewConfig(BaseModel):
         """Raise if *path* exists and is not a directory."""
         if path.exists() and not path.is_dir():
             raise ValueError(f"cache_dir exists but is not a directory: {path}")
+
+    @model_validator(mode="after")
+    def _validate_skip_visuals(self) -> OverviewConfig:
+        """Validate that skip_visuals is only used with video format."""
+        if self.skip_visuals and self.format != "video":
+            raise ValueError(
+                "skip_visuals is only valid when format='video', "
+                f"got format='{self.format}'"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_output_format_match(self) -> OverviewConfig:
