@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,6 +28,12 @@ _HANDLED_ERRORS = (
     VisualGenerationError,
 )
 
+#: Default cache directory name (relative to source_dir).
+_CACHE_DIR_NAME = ".video_overview_cache"
+
+#: Known subcommand names that the group should route to subcommands.
+_SUBCOMMANDS = {"cache"}
+
 
 def _validate_output_parent(
     ctx: click.Context,
@@ -44,8 +51,43 @@ def _validate_output_parent(
     return value
 
 
-@click.command()
+class _DefaultCommandGroup(click.Group):
+    """A click Group that falls back to a default command.
+
+    When the first argument is not a registered subcommand, the group
+    delegates to the ``generate`` command so that the existing
+    ``video-overview SOURCE_DIR --topic ...`` interface keeps working.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        """Route to default command when the first arg is not a subcommand."""
+        # --version is handled by the group itself (click.version_option).
+        if args and args[0] == "--version":
+            return super().parse_args(ctx, args)
+        # For everything else, if the first arg is not a known subcommand,
+        # prepend 'generate' so Click routes to the default command.
+        # This includes --help (so `video-overview --help` shows generate help)
+        # and positional args (so `video-overview ./src ...` still works).
+        if args and args[0] not in _SUBCOMMANDS:
+            args = ["generate"] + list(args)
+        # If no args at all, also route to generate (which will show its help
+        # due to missing required arguments).
+        if not args:
+            args = ["generate"]
+        return super().parse_args(ctx, args)
+
+
+@click.group(cls=_DefaultCommandGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="video-overview")
+@click.pass_context
+def main(ctx: click.Context) -> None:
+    """Generate video or audio overviews from source content."""
+    # If invoked without any subcommand, show help.
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+@main.command()
 @click.argument(
     "source_dir",
     type=click.Path(exists=True, file_okay=False),
@@ -138,7 +180,7 @@ def _validate_output_parent(
     default=False,
     help="Enable verbose logging (INFO level).",
 )
-def main(
+def generate(
     source_dir: str,
     topic: str,
     output: str,
@@ -199,6 +241,150 @@ def main(
     except _HANDLED_ERRORS as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
+
+
+# ------------------------------------------------------------------
+# Cache management subcommands
+# ------------------------------------------------------------------
+
+
+def _resolve_cache_dir(
+    cache_dir: str | None,
+    source_dir: str | None,
+) -> Path | None:
+    """Resolve the cache directory from CLI options.
+
+    Returns ``None`` when neither option is provided.
+    """
+    if cache_dir:
+        return Path(cache_dir)
+    if source_dir:
+        return Path(source_dir) / _CACHE_DIR_NAME
+    return None
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format a byte count as a human-readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+@main.group()
+def cache() -> None:
+    """Manage cached audio and visual assets."""
+
+
+@cache.command("list")
+@click.option(
+    "--cache-dir",
+    default=None,
+    help="Path to the cache directory.",
+)
+@click.option(
+    "--source-dir",
+    default=None,
+    help="Source directory (cache is at <source-dir>/.video_overview_cache).",
+)
+def cache_list(cache_dir: str | None, source_dir: str | None) -> None:
+    """Show cached audio and visual assets with sizes."""
+    resolved = _resolve_cache_dir(cache_dir, source_dir)
+    if resolved is None:
+        raise click.UsageError(
+            "Provide --cache-dir or --source-dir to locate the cache."
+        )
+
+    if not resolved.is_dir():
+        click.echo("No cached assets found (cache directory does not exist).")
+        return
+
+    # Collect audio cache files (audio_*.wav)
+    audio_files = sorted(resolved.glob("audio_*.wav"))
+    audio_total = sum(f.stat().st_size for f in audio_files)
+
+    # Collect visual cache files (visuals/*.png)
+    visuals_dir = resolved / "visuals"
+    visual_files = sorted(visuals_dir.glob("*.png")) if visuals_dir.is_dir() else []
+    visual_total = sum(f.stat().st_size for f in visual_files)
+
+    # Collect other intermediate files
+    other_patterns = ["output.wav", "filelist.txt", "static_frame_*.png"]
+    other_files: list[Path] = []
+    for pattern in other_patterns:
+        other_files.extend(resolved.glob(pattern))
+    other_total = sum(f.stat().st_size for f in other_files)
+
+    total_files = len(audio_files) + len(visual_files) + len(other_files)
+    total_size = audio_total + visual_total + other_total
+
+    if total_files == 0:
+        click.echo("No cached assets found.")
+        return
+
+    click.echo(f"Cache directory: {resolved}")
+    click.echo()
+    click.echo(
+        f"  Audio assets:  {len(audio_files)} files  ({_format_size(audio_total)})"
+    )
+    click.echo(
+        f"  Visual assets: {len(visual_files)} files  ({_format_size(visual_total)})"
+    )
+    if other_files:
+        click.echo(
+            f"  Other files:   {len(other_files)} files  ({_format_size(other_total)})"
+        )
+    click.echo()
+    click.echo(f"  Total: {total_files} files ({_format_size(total_size)})")
+
+
+@cache.command("clear")
+@click.option(
+    "--cache-dir",
+    default=None,
+    help="Path to the cache directory.",
+)
+@click.option(
+    "--source-dir",
+    default=None,
+    help="Source directory (cache is at <source-dir>/.video_overview_cache).",
+)
+def cache_clear(cache_dir: str | None, source_dir: str | None) -> None:
+    """Delete all cached audio and visual assets."""
+    resolved = _resolve_cache_dir(cache_dir, source_dir)
+    if resolved is None:
+        raise click.UsageError(
+            "Provide --cache-dir or --source-dir to locate the cache."
+        )
+
+    if not resolved.is_dir():
+        click.echo("No cache directory found. Nothing to clear.")
+        return
+
+    # Remove all contents of the cache directory
+    removed_count = 0
+    removed_bytes = 0
+
+    for item in list(resolved.iterdir()):
+        if item.is_dir():
+            dir_size = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+            dir_count = sum(1 for f in item.rglob("*") if f.is_file())
+            shutil.rmtree(item)
+            removed_count += dir_count
+            removed_bytes += dir_size
+        else:
+            removed_bytes += item.stat().st_size
+            removed_count += 1
+            item.unlink()
+
+    click.echo(
+        f"Cleared {removed_count} cached files ({_format_size(removed_bytes)}) "
+        f"from {resolved}"
+    )
 
 
 if __name__ == "__main__":
