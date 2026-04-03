@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 _MODEL = "gemini-2.5-flash-preview-tts"
 _DEFAULT_MAX_SEGMENTS_PER_BATCH = 13
 _DEFAULT_MAX_TOKENS_PER_BATCH = 8000
-_DEFAULT_MAX_RETRIES = 3
+_DEFAULT_MAX_ATTEMPTS = 3
 _CHARS_PER_TOKEN = 4  # heuristic: 1 token ~ 4 characters
 _BASE_DELAY = 1  # seconds
 _CONVERSATION_SPEAKERS = {"Host", "Expert"}
@@ -55,7 +55,7 @@ class AudioGenerator:
         cache_dir: Path,
         max_tokens_per_batch: int = _DEFAULT_MAX_TOKENS_PER_BATCH,
         max_segments_per_batch: int = _DEFAULT_MAX_SEGMENTS_PER_BATCH,
-        max_retries: int = _DEFAULT_MAX_RETRIES,
+        max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
     ) -> tuple[Path, list[float]]:
         """Generate audio from a script.
 
@@ -69,7 +69,8 @@ class AudioGenerator:
                 Uses a heuristic of ~4 characters per token.
             max_segments_per_batch: Maximum number of segments per TTS
                 batch (secondary guard).
-            max_retries: Maximum number of retry attempts for API calls.
+            max_attempts: Maximum number of total attempts for each
+                API call (includes the initial attempt plus retries).
 
         Returns:
             A tuple of (audio_path, segment_durations) where audio_path
@@ -80,6 +81,17 @@ class AudioGenerator:
             AudioGenerationError: On API errors, file errors, or
                 ffmpeg failures.
         """
+        if max_tokens_per_batch < 1:
+            raise AudioGenerationError(
+                "max_tokens_per_batch must be a positive integer"
+            )
+        if max_segments_per_batch < 1:
+            raise AudioGenerationError(
+                "max_segments_per_batch must be a positive integer"
+            )
+        if max_attempts < 1:
+            raise AudioGenerationError("max_attempts must be a positive integer")
+
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -130,7 +142,7 @@ class AudioGenerator:
             prompt = self._build_prompt(batch)
             config = self._build_config(batch, is_multi_speaker, voice_map)
             audio_bytes = self._call_api_with_retry(
-                client, prompt, config, max_retries=max_retries
+                client, prompt, config, max_attempts=max_attempts
             )
             chunk_path = cache_dir / f"chunk_{i:03d}.wav"
             chunk_path.write_bytes(audio_bytes)
@@ -157,9 +169,12 @@ class AudioGenerator:
         """Estimate the token count for a segment's prompt contribution.
 
         Uses the heuristic that 1 token is approximately 4 characters.
-        The prompt text for a segment is ``"Speaker: text"``.
+        The prompt text for a segment is ``"Speaker: text\\n"``
+        (including the trailing newline separator used by
+        ``_build_prompt``).
         """
-        prompt_text = f"{segment.speaker}: {segment.text}"
+        # +1 for the newline separator between segments in the prompt
+        prompt_text = f"{segment.speaker}: {segment.text}\n"
         return len(prompt_text) / _CHARS_PER_TOKEN
 
     @staticmethod
@@ -277,7 +292,7 @@ class AudioGenerator:
         client: genai.Client,
         prompt: str,
         config: types.GenerateContentConfig,
-        max_retries: int = _DEFAULT_MAX_RETRIES,
+        max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
     ) -> bytes:
         """Call the Gemini TTS API with exponential backoff retry.
 
@@ -285,11 +300,11 @@ class AudioGenerator:
             client: The Gemini API client.
             prompt: The TTS prompt text.
             config: The GenerateContentConfig for the API call.
-            max_retries: Maximum number of attempts before giving up.
+            max_attempts: Total number of attempts (initial + retries).
         """
         last_error: Exception | None = None
 
-        for attempt in range(max_retries):
+        for attempt in range(max_attempts):
             try:
                 response = client.models.generate_content(
                     model=_MODEL,
@@ -299,19 +314,19 @@ class AudioGenerator:
                 return self._extract_audio(response)
             except Exception as exc:
                 last_error = exc
-                if attempt < max_retries - 1:
+                if attempt < max_attempts - 1:
                     delay = _BASE_DELAY * (2**attempt)
                     logger.warning(
-                        "TTS API retry attempt %d/%d after error: %s (delay=%ds)",
+                        "TTS API retry %d/%d after error: %s (delay=%ds)",
                         attempt + 1,
-                        max_retries,
+                        max_attempts,
                         exc,
                         delay,
                     )
                     time.sleep(delay)
 
         raise AudioGenerationError(
-            f"API call failed after {max_retries} attempts: {last_error}"
+            f"API call failed after {max_attempts} attempts: {last_error}"
         )
 
     # ------------------------------------------------------------------

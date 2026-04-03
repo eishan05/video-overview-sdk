@@ -760,8 +760,8 @@ class TestRetryLogic:
         # Should have tried 3 times (default)
         assert mock_client.models.generate_content.call_count == 3
 
-    def test_custom_max_retries(self, generator, narration_script, tmp_path, mocker):
-        """Custom max_retries should control retry count."""
+    def test_custom_max_attempts(self, generator, narration_script, tmp_path, mocker):
+        """Custom max_attempts should control total attempt count."""
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception(
             "API permanently down"
@@ -779,13 +779,13 @@ class TestRetryLogic:
                 expert_voice="Charon",
                 narrator_voice="Kore",
                 cache_dir=tmp_path,
-                max_retries=5,
+                max_attempts=5,
             )
 
         assert mock_client.models.generate_content.call_count == 5
 
-    def test_single_retry(self, generator, narration_script, tmp_path, mocker):
-        """max_retries=1 should try exactly once with no sleep."""
+    def test_single_attempt(self, generator, narration_script, tmp_path, mocker):
+        """max_attempts=1 should try exactly once with no sleep."""
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("fail")
         mocker.patch(
@@ -801,7 +801,7 @@ class TestRetryLogic:
                 expert_voice="Charon",
                 narrator_voice="Kore",
                 cache_dir=tmp_path,
-                max_retries=1,
+                max_attempts=1,
             )
 
         assert mock_client.models.generate_content.call_count == 1
@@ -1257,14 +1257,14 @@ class TestChunkSegmentsUnit:
 
     def test_exact_budget_boundary(self):
         """Segments that exactly fill the budget should be in one batch."""
-        # "Host: " + "AAAA" = 10 chars => 2.5 tokens
+        # "Host: AAAA\n" = 11 chars => 2.75 tokens per segment
         segments = [
             ScriptSegment(speaker="Host", text="AAAA", visual_prompt="v"),
             ScriptSegment(speaker="Host", text="BBBB", visual_prompt="v"),
         ]
-        # 2 segments each ~2.5 tokens = ~5 tokens total
+        # 2 segments each ~2.75 tokens = ~5.5 tokens total
         batches = AudioGenerator._chunk_segments(
-            segments, max_segments_per_batch=100, max_tokens_per_batch=5
+            segments, max_segments_per_batch=100, max_tokens_per_batch=6
         )
         assert len(batches) == 1
 
@@ -1275,16 +1275,16 @@ class TestChunkSegmentsUnit:
 
     def test_chars_per_token_heuristic(self):
         """Verify the 4-chars-per-token heuristic is applied correctly."""
-        # "Narrator: " = 10 chars, text = "A" * 80 = 80 chars
-        # Total prompt text for segment = 90 chars => 22.5 tokens
+        # "Narrator: " = 10 chars, text = "A" * 80 = 80 chars, "\n" = 1 char
+        # Total prompt text for segment = 91 chars => 22.75 tokens
         segments = [
             ScriptSegment(speaker="Narrator", text="A" * 80, visual_prompt="v"),
             ScriptSegment(speaker="Narrator", text="B" * 80, visual_prompt="v"),
             ScriptSegment(speaker="Narrator", text="C" * 80, visual_prompt="v"),
         ]
-        # Budget of 45 tokens allows 2 segments (~22.5 each), third goes to next batch
+        # Budget of 46 tokens allows 2 segments (~22.75 each), third to next batch
         batches = AudioGenerator._chunk_segments(
-            segments, max_segments_per_batch=100, max_tokens_per_batch=45
+            segments, max_segments_per_batch=100, max_tokens_per_batch=46
         )
         assert len(batches) == 2
         assert len(batches[0]) == 2

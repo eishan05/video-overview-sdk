@@ -64,7 +64,7 @@ async def _run_audio_and_visuals(
             cache_dir=config.cache_dir,
             max_tokens_per_batch=config.max_tokens_per_batch,
             max_segments_per_batch=config.max_segments_per_batch,
-            max_retries=config.audio_max_retries,
+            max_attempts=config.audio_max_attempts,
         ),
     )
 
@@ -187,7 +187,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
             cache_dir=config.cache_dir,
             max_tokens_per_batch=config.max_tokens_per_batch,
             max_segments_per_batch=config.max_segments_per_batch,
-            max_retries=config.audio_max_retries,
+            max_attempts=config.audio_max_attempts,
         )
         audio_path, segment_durations = audio_result
 

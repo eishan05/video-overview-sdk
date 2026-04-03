@@ -61,7 +61,7 @@ class OverviewConfig(BaseModel):
     cache_dir: Optional[Path] = None
     max_tokens_per_batch: PositiveInt = 8000
     max_segments_per_batch: PositiveInt = 13
-    audio_max_retries: PositiveInt = 3
+    audio_max_attempts: PositiveInt = 3
 
     @field_validator("source_dir")
     @classmethod
