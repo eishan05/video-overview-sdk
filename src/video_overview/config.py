@@ -102,9 +102,7 @@ class OverviewConfig(BaseModel):
         """Validate that output file extension matches the chosen format."""
         suffix = self.output.suffix.lower()
         if self.format == "video" and suffix not in (".mp4",):
-            raise ValueError(
-                f"Video format requires .mp4 output, got '{suffix}'"
-            )
+            raise ValueError(f"Video format requires .mp4 output, got '{suffix}'")
         if self.format == "audio" and suffix not in (".mp3", ".wav"):
             raise ValueError(
                 f"Audio format requires .mp3 or .wav output, got '{suffix}'"

@@ -277,6 +277,7 @@ class ContentReader:
 
         # Collect all candidate files
         candidates: list[Path] = []
+        include_matched = 0  # files that passed the include filter
         for path in sorted(source_dir.rglob("*")):
             if not path.is_file():
                 continue
@@ -305,11 +306,21 @@ class ContentReader:
             if include is not None and not _matches_any(rel_path_str, include):
                 continue
 
+            include_matched += 1
+
             # Apply exclude filter
             if exclude and _matches_any(rel_path_str, exclude):
                 continue
 
             candidates.append(path)
+
+        # Raise when explicit include patterns matched zero files.
+        # Exempt: include=None (no filter), include=[] (documented as
+        # "include nothing"), and include=["*"] (CLI default wildcard).
+        _is_explicit_include = bool(include) and include != ["*"]
+        if _is_explicit_include and include_matched == 0:
+            patterns_str = ", ".join(include)
+            raise ValueError(f"No files matched include patterns: {patterns_str}")
 
         # Read file contents, skipping binary files
         file_entries: list[dict] = []

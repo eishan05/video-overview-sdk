@@ -435,3 +435,65 @@ class TestDirectoryTreeFromFullCandidates:
         # is included in the content bundle.
         assert "a.py" in tree
         assert "b.py" in tree
+
+
+class TestIncludePatternMatchesNothing:
+    """When explicit include patterns match zero files, raise ValueError."""
+
+    def test_raises_when_include_matches_no_files(self, reader, tmp_path):
+        """Explicit include patterns that match nothing should raise ValueError."""
+        (tmp_path / "main.py").write_text("x = 1")
+        (tmp_path / "utils.py").write_text("y = 2")
+
+        with pytest.raises(ValueError, match="include"):
+            reader.read(tmp_path, include=["*.rs"])
+
+    def test_raises_with_path_based_pattern_matching_nothing(self, reader, tmp_path):
+        """Path-based include patterns that match nothing should raise ValueError."""
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with pytest.raises(ValueError, match="include"):
+            reader.read(tmp_path, include=["lib/*.py"])
+
+    def test_no_raise_when_include_is_none(self, reader, tmp_path):
+        """include=None means no filter, should not raise even on empty dirs."""
+        result = reader.read(tmp_path, include=None)
+        assert result["total_files"] == 0
+
+    def test_no_raise_when_include_matches_files(self, reader, sample_dir):
+        """Include patterns that DO match files should not raise."""
+        result = reader.read(sample_dir, include=["*.py"])
+        assert result["total_files"] > 0
+
+    def test_no_raise_when_wildcard_on_empty_dir(self, reader, tmp_path):
+        """include=['*'] on an empty directory should not raise."""
+        result = reader.read(tmp_path, include=["*"])
+        assert result["total_files"] == 0
+
+    def test_error_message_includes_patterns(self, reader, tmp_path):
+        """Error message should mention the patterns that matched nothing."""
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with pytest.raises(ValueError, match=r"\*\.rs"):
+            reader.read(tmp_path, include=["*.rs"])
+
+    def test_raises_with_multiple_patterns_all_matching_nothing(self, reader, tmp_path):
+        """Multiple patterns that all match nothing should raise."""
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with pytest.raises(ValueError, match="include"):
+            reader.read(tmp_path, include=["*.rs", "*.go", "*.java"])
+
+    def test_no_raise_when_include_is_empty_list(self, reader, tmp_path):
+        """include=[] means 'include nothing' and should not raise ValueError."""
+        (tmp_path / "main.py").write_text("x = 1")
+        result = reader.read(tmp_path, include=[])
+        assert result["total_files"] == 0
+
+    def test_no_raise_when_include_matches_but_exclude_removes_all(
+        self, reader, tmp_path
+    ):
+        """If include matches files but exclude removes them, should not raise."""
+        (tmp_path / "main.py").write_text("x = 1")
+        result = reader.read(tmp_path, include=["*.py"], exclude=["*.py"])
+        assert result["total_files"] == 0

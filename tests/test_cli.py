@@ -581,6 +581,57 @@ class TestResultSummary:
         assert expected in result.output
 
 
+class TestIncludePatternMatchesNothing:
+    """Test CLI behavior when include patterns match no files."""
+
+    def test_include_no_match_exits_with_error(self, runner, source_dir, output_file):
+        """When --include patterns match no files, CLI should exit 1 with message."""
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=ValueError("No files matched include patterns: *.rs"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--include",
+                    "*.rs",
+                ],
+            )
+        assert result.exit_code == 1
+        assert "include" in result.output.lower() or "no files" in result.output.lower()
+
+    def test_include_no_match_error_mentions_patterns(
+        self, runner, source_dir, output_file
+    ):
+        """Error output should include the specific patterns."""
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=ValueError("No files matched include patterns: *.rs, *.go"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "--topic",
+                    "test",
+                    "--output",
+                    str(output_file),
+                    "--include",
+                    "*.rs",
+                    "--include",
+                    "*.go",
+                ],
+            )
+        assert result.exit_code == 1
+        assert "*.rs" in result.output
+        assert "*.go" in result.output
+
+
 class TestHelpText:
     """Test that --help works."""
 
