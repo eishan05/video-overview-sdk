@@ -191,7 +191,10 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
     )
 
     # ---- 2b. Fail fast on empty content ----
-    if content_bundle["total_files"] == 0 or content_bundle["total_chars"] == 0:
+    _has_content = content_bundle["total_files"] > 0 and any(
+        f.get("content", "").strip() for f in content_bundle["files"]
+    )
+    if not _has_content:
         raise ValueError(
             f"No readable files found in {config.source_dir}. "
             "The directory may be empty, contain only binary files, "

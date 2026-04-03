@@ -623,6 +623,27 @@ class TestEmptySourceContent:
         with pytest.raises(ValueError, match="(?i)no readable files"):
             create_overview(config=config)
 
+    def test_raises_on_whitespace_only_files(self, tmp_source, all_mocks):
+        """Files containing only whitespace should be treated as empty."""
+        from video_overview.core import create_overview
+
+        all_mocks["content_reader"].read.return_value = {
+            "directory_structure": "source/\n  blank.py\n",
+            "files": [
+                {
+                    "path": "blank.py",
+                    "content": "   \n\n  \t  \n",
+                    "language": "python",
+                }
+            ],
+            "total_files": 1,
+            "total_chars": 11,
+        }
+        config = _make_config(tmp_source)
+
+        with pytest.raises(ValueError, match="(?i)no readable files"):
+            create_overview(config=config)
+
     def test_cache_dir_not_created_on_empty_content(self, tmp_source, all_mocks):
         """Cache directory should not be created when content is empty."""
         from video_overview.core import create_overview
