@@ -123,12 +123,12 @@ class TestContentReaderLogging:
         assert any("__pycache__" in r.message for r in caplog.records)
 
     def test_logs_unicode_decode_failure(self, tmp_path, caplog):
-        """Files that fail UTF-8 decode should be logged."""
+        """Files that fail UTF-8 decode should be logged at INFO."""
         # Create a file with invalid UTF-8 bytes (but no null byte so not binary)
         (tmp_path / "bad.txt").write_bytes(b"\xff\xfe\x80\x81" + b"x" * 100)
         (tmp_path / "good.py").write_text("x = 1")
 
-        with caplog.at_level(logging.DEBUG, logger="video_overview.content.reader"):
+        with caplog.at_level(logging.INFO, logger="video_overview.content.reader"):
             ContentReader().read(tmp_path)
 
         assert any(
@@ -149,17 +149,33 @@ class TestContentReaderLogging:
         assert any("gitignore" in r.message.lower() for r in caplog.records)
 
     def test_logs_skipped_binary_content(self, tmp_path, caplog):
-        """Files with binary content (null bytes) should be logged."""
+        """Files with binary content (null bytes) should be logged at INFO."""
         (tmp_path / "data.bin").write_bytes(b"\x00\x01\x02\x03")
         (tmp_path / "main.py").write_text("x = 1")
 
-        with caplog.at_level(logging.DEBUG, logger="video_overview.content.reader"):
+        with caplog.at_level(logging.INFO, logger="video_overview.content.reader"):
             ContentReader().read(tmp_path)
 
         assert any(
             "data.bin" in r.message and "binary" in r.message.lower()
             for r in caplog.records
         )
+
+    def test_logs_gitignore_invalid_pattern(self, tmp_path, caplog):
+        """A .gitignore with invalid patterns should be logged and not crash."""
+        gitignore = tmp_path / ".gitignore"
+        # A dangling backslash is an invalid gitignore pattern
+        gitignore.write_text("\\")
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with caplog.at_level(
+            logging.WARNING, logger="video_overview.content.reader"
+        ):
+            result = ContentReader().read(tmp_path)
+
+        # Should not crash, and should still read files
+        assert result["total_files"] >= 1
+        assert any("gitignore" in r.message.lower() for r in caplog.records)
 
     def test_reader_has_module_logger(self):
         """ContentReader module should define a module-level logger."""
@@ -241,7 +257,7 @@ class TestVisualGeneratorLogging:
         )
 
         gen = VisualGenerator(api_key="test-key")
-        with caplog.at_level(logging.DEBUG, logger="video_overview.visuals.generator"):
+        with caplog.at_level(logging.INFO, logger="video_overview.visuals.generator"):
             asyncio.run(gen.generate(script, tmp_path))
 
         assert any(
@@ -260,7 +276,7 @@ class TestVisualGeneratorLogging:
         )
 
         gen = VisualGenerator(api_key="test-key")
-        with caplog.at_level(logging.DEBUG, logger="video_overview.visuals.generator"):
+        with caplog.at_level(logging.INFO, logger="video_overview.visuals.generator"):
             asyncio.run(gen.generate(script, tmp_path))
 
         assert any(
@@ -464,6 +480,90 @@ class TestCLIVerboseFlag:
         # Root logger should be at WARNING (30) or higher
         if log_levels:
             assert log_levels[0] >= logging.WARNING
+
+    def test_verbose_sets_info_level(self, tmp_path):
+        """--verbose should set root log level to INFO."""
+        runner = CliRunner()
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        (source_dir / "main.py").write_text("x = 1")
+        output_file = tmp_path / "out.mp4"
+
+        mock_result = OverviewResult(
+            output_path=output_file,
+            duration_seconds=60.0,
+            segments_count=3,
+        )
+
+        log_levels = []
+
+        def capture_and_run(**kwargs):
+            log_levels.append(logging.getLogger().level)
+            return mock_result
+
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=capture_and_run,
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "-t",
+                    "test",
+                    "-o",
+                    str(output_file),
+                    "--verbose",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert log_levels, "create_overview was not called"
+        assert log_levels[0] == logging.INFO
+
+    def test_verbose_works_with_preconfigured_logging(self, tmp_path):
+        """--verbose should override pre-existing root logger config."""
+        runner = CliRunner()
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        (source_dir / "main.py").write_text("x = 1")
+        output_file = tmp_path / "out.mp4"
+
+        mock_result = OverviewResult(
+            output_path=output_file,
+            duration_seconds=60.0,
+            segments_count=3,
+        )
+
+        log_levels = []
+
+        def capture_and_run(**kwargs):
+            log_levels.append(logging.getLogger().level)
+            return mock_result
+
+        # Pre-configure logging (simulates test runner or wrapper)
+        logging.basicConfig(level=logging.CRITICAL)
+
+        with patch(
+            "video_overview.cli.create_overview",
+            side_effect=capture_and_run,
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    str(source_dir),
+                    "-t",
+                    "test",
+                    "-o",
+                    str(output_file),
+                    "--verbose",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert log_levels, "create_overview was not called"
+        # force=True in basicConfig should override the previous config
+        assert log_levels[0] == logging.INFO
 
 
 # ---------------------------------------------------------------------------

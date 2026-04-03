@@ -150,6 +150,7 @@ def main(
         level=log_level,
         format="%(name)s: %(levelname)s: %(message)s",
         stream=sys.stderr,
+        force=True,
     )
 
     try:

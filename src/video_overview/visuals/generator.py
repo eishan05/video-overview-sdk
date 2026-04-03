@@ -138,7 +138,7 @@ class VisualGenerator:
 
         # Check cache before acquiring any locks (fast path)
         if cached_path.exists():
-            logger.debug("Cache hit for visual prompt: %s", visual_prompt)
+            logger.info("Cache hit for visual prompt: %s", visual_prompt)
             return cached_path
 
         # Serialise per-prompt so duplicate prompts don't race
@@ -146,12 +146,12 @@ class VisualGenerator:
             # Re-check after acquiring lock (another task may have
             # written the cache while we waited).
             if cached_path.exists():
-                logger.debug(
+                logger.info(
                     "Cache hit (post-lock) for visual prompt: %s", visual_prompt
                 )
                 return cached_path
 
-            logger.debug("Cache miss for visual prompt: %s", visual_prompt)
+            logger.info("Cache miss for visual prompt: %s", visual_prompt)
 
             # If this prompt already failed, skip API and go to fallback
             if visual_prompt not in failed_prompts:

@@ -342,7 +342,7 @@ class ContentReader:
                 continue
 
             if _is_binary(raw):
-                logger.debug(
+                logger.info(
                     "Skipping binary content: %s",
                     path.relative_to(source_dir).as_posix(),
                 )
@@ -351,7 +351,7 @@ class ContentReader:
             try:
                 text = raw.decode("utf-8")
             except UnicodeDecodeError:
-                logger.debug(
+                logger.info(
                     "Skipping file with unicode decode failure: %s",
                     path.relative_to(source_dir).as_posix(),
                 )
@@ -424,6 +424,8 @@ class ContentReader:
         try:
             text = gitignore_path.read_text(encoding="utf-8")
             return pathspec.PathSpec.from_lines("gitignore", text.splitlines())
-        except (OSError, UnicodeDecodeError) as exc:
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            # ValueError covers pathspec's GitWildMatchPatternError
+            # (raised on syntactically invalid .gitignore patterns).
             logger.warning("Failed to parse .gitignore at %s: %s", gitignore_path, exc)
             return None
