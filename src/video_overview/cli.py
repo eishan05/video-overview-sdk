@@ -126,6 +126,12 @@ def _validate_output_parent(
     help="Skip Gemini image generation; use a static dark frame (video format only).",
 )
 @click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Skip reading cached assets and always regenerate.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -146,6 +152,7 @@ def main(
     llm: str,
     max_duration: int,
     skip_visuals: bool,
+    no_cache: bool,
     verbose: bool,
 ) -> None:
     """Generate a video or audio overview from source content."""
@@ -178,6 +185,7 @@ def main(
             llm_backend=llm,
             max_duration_minutes=max_duration,
             skip_visuals=skip_visuals,
+            no_cache=no_cache,
         )
         result = create_overview(config=config)
         click.echo(

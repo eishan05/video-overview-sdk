@@ -119,6 +119,7 @@ async def _run_audio_and_visuals(
             max_tokens_per_batch=config.max_tokens_per_batch,
             max_segments_per_batch=config.max_segments_per_batch,
             max_attempts=config.audio_max_attempts,
+            no_cache=config.no_cache,
         ),
     )
 
@@ -126,6 +127,7 @@ async def _run_audio_and_visuals(
     visual_task = visual_gen.generate(
         script=script,
         cache_dir=config.cache_dir,
+        no_cache=config.no_cache,
     )
 
     audio_result, visual_result = await asyncio.gather(audio_task, visual_task)
@@ -222,6 +224,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
                 max_tokens_per_batch=config.max_tokens_per_batch,
                 max_segments_per_batch=config.max_segments_per_batch,
                 max_attempts=config.audio_max_attempts,
+                no_cache=config.no_cache,
             )
             audio_path, segment_durations = audio_result
 
@@ -271,6 +274,7 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
             max_tokens_per_batch=config.max_tokens_per_batch,
             max_segments_per_batch=config.max_segments_per_batch,
             max_attempts=config.audio_max_attempts,
+            no_cache=config.no_cache,
         )
         audio_path, segment_durations = audio_result
 

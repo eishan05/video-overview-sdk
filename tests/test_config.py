@@ -788,6 +788,45 @@ class TestOverviewConfigSkipVisuals:
 
 
 # ---------------------------------------------------------------------------
+# OverviewConfig – no_cache flag
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewConfigNoCache:
+    """Tests for the no_cache configuration flag."""
+
+    def test_no_cache_default_is_false(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source, output=tmp_path / "out.mp4", topic="Test"
+        )
+        assert cfg.no_cache is False
+
+    def test_no_cache_true_accepted(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            no_cache=True,
+        )
+        assert cfg.no_cache is True
+
+    def test_no_cache_false_accepted(self, tmp_path):
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        cfg = OverviewConfig(
+            source_dir=source,
+            output=tmp_path / "out.mp4",
+            topic="Test",
+            no_cache=False,
+        )
+        assert cfg.no_cache is False
+
+
+# ---------------------------------------------------------------------------
 # Exports from top-level package
 # ---------------------------------------------------------------------------
 

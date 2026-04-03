@@ -42,12 +42,15 @@ class VisualGenerator:
         self,
         script: Script,
         cache_dir: Path,
+        no_cache: bool = False,
     ) -> list[Path]:
         """Generate visual images for each segment in the script.
 
         Args:
             script: The Script model containing segments with visual_prompts.
             cache_dir: Directory for caching generated images.
+            no_cache: When True, skip reading cached images and always
+                regenerate from the API.
 
         Returns:
             A list of image file paths ordered by segment.
@@ -87,6 +90,7 @@ class VisualGenerator:
                     semaphore=semaphore,
                     prompt_lock=prompt_locks[seg.visual_prompt],
                     failed_prompts=failed_prompts,
+                    no_cache=no_cache,
                 )
             )
             for seg in script.segments
@@ -118,6 +122,7 @@ class VisualGenerator:
         semaphore: asyncio.Semaphore,
         prompt_lock: asyncio.Lock,
         failed_prompts: set[str],
+        no_cache: bool = False,
     ) -> Path:
         """Generate a single image for a visual prompt.
 
@@ -137,7 +142,7 @@ class VisualGenerator:
         cached_path = visuals_dir / f"{prompt_hash}.png"
 
         # Check cache before acquiring any locks (fast path)
-        if cached_path.exists():
+        if not no_cache and cached_path.exists():
             logger.info("Cache hit for visual prompt: %s", visual_prompt)
             return cached_path
 
@@ -145,7 +150,7 @@ class VisualGenerator:
         async with prompt_lock:
             # Re-check after acquiring lock (another task may have
             # written the cache while we waited).
-            if cached_path.exists():
+            if not no_cache and cached_path.exists():
                 logger.info(
                     "Cache hit (post-lock) for visual prompt: %s", visual_prompt
                 )
