@@ -103,10 +103,25 @@ class TestCustomCacheDirExclusion:
         custom_cache.mkdir()
         (custom_cache / "filelist.txt").write_text("main.py")
 
-        result = reader.read(tmp_path, exclude=["my_custom_cache/*"])
+        result = reader.read(tmp_path, exclude=["my_custom_cache/"])
         paths = [f["path"] for f in result["files"]]
         assert "main.py" in paths
         assert not any("filelist.txt" in p for p in paths)
+
+    def test_exclude_custom_cache_dir_nested_files(self, reader, tmp_path):
+        """Nested files under a custom cache dir must also be excluded."""
+        (tmp_path / "main.py").write_text("x = 1")
+        custom_cache = tmp_path / "my_custom_cache"
+        audio_sub = custom_cache / "audio"
+        audio_sub.mkdir(parents=True)
+        (custom_cache / "filelist.txt").write_text("main.py")
+        (audio_sub / "segment_0.txt").write_text("audio data")
+
+        result = reader.read(tmp_path, exclude=["my_custom_cache/"])
+        paths = [f["path"] for f in result["files"]]
+        assert "main.py" in paths
+        assert not any("filelist.txt" in p for p in paths)
+        assert not any("segment_0" in p for p in paths)
 
 
 # ---------------------------------------------------------------------------
