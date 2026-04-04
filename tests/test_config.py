@@ -288,6 +288,20 @@ class TestOverviewConfigOutputValidation:
                 topic="Test",
             )
 
+    def test_output_rejects_parent_that_is_a_file(self, tmp_path):
+        """Reject output when parent path exists but is a file, not a directory."""
+        source = tmp_path / "src_dir"
+        source.mkdir()
+        # Create a regular file where the parent directory would be
+        fake_parent = tmp_path / "not_a_dir"
+        fake_parent.write_text("I am a file")
+        with pytest.raises(ValidationError, match="not a directory"):
+            OverviewConfig(
+                source_dir=source,
+                output=fake_parent / "out.mp4",
+                topic="Test",
+            )
+
 
 # ---------------------------------------------------------------------------
 # OverviewConfig – Literal validation

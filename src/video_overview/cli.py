@@ -37,11 +37,17 @@ def _validate_output_parent(
     param: click.Parameter,
     value: str,
 ) -> str:
-    """Ensure the parent directory of ``--output`` exists."""
+    """Ensure the parent directory of ``--output`` exists and is a directory."""
     parent = Path(value).parent
     if not parent.exists():
         raise click.BadParameter(
             f"output parent directory does not exist: {parent}",
+            ctx=ctx,
+            param=param,
+        )
+    if not parent.is_dir():
+        raise click.BadParameter(
+            f"output parent path is not a directory: {parent}",
             ctx=ctx,
             param=param,
         )
