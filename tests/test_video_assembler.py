@@ -181,6 +181,193 @@ class TestInputValidation:
                 format="video",
             )
 
+    # -- audio_path existence / is-file checks --
+
+    def test_missing_audio_path_raises_error_audio_format(
+        self, assembler, tmp_path, mocker
+    ):
+        """Should raise VideoAssemblyError when audio_path does not exist (audio)."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        mock_copy = mocker.patch("video_overview.video.assembler.shutil.copy2")
+        missing = tmp_path / "no_such_file.wav"
+        with pytest.raises(VideoAssemblyError, match="audio_path"):
+            assembler.assemble(
+                audio_path=missing,
+                image_paths=[],
+                segment_durations=[],
+                output_path=tmp_path / "out.mp3",
+                format="audio",
+            )
+        mock_run.assert_not_called()
+        mock_copy.assert_not_called()
+
+    def test_missing_audio_path_raises_error_video_format(
+        self, assembler, single_image, tmp_path, mocker
+    ):
+        """Should raise VideoAssemblyError when audio_path does not exist (video)."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        missing = tmp_path / "no_such_file.wav"
+        with pytest.raises(VideoAssemblyError, match="audio_path"):
+            assembler.assemble(
+                audio_path=missing,
+                image_paths=single_image,
+                segment_durations=[5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+        mock_run.assert_not_called()
+
+    def test_audio_path_is_directory_raises_error(
+        self, assembler, single_image, tmp_path, mocker
+    ):
+        """Should raise VideoAssemblyError when audio_path is a directory."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        d = tmp_path / "a_directory"
+        d.mkdir()
+        with pytest.raises(VideoAssemblyError, match="audio_path"):
+            assembler.assemble(
+                audio_path=d,
+                image_paths=single_image,
+                segment_durations=[5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+        mock_run.assert_not_called()
+
+    # -- image_path existence / is-file checks --
+
+    def test_missing_image_path_raises_error(
+        self, assembler, audio_path, tmp_path, mocker
+    ):
+        """Should raise VideoAssemblyError when an image_path does not exist."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        missing = tmp_path / "no_such_image.png"
+        with pytest.raises(VideoAssemblyError, match="image_path"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=[missing],
+                segment_durations=[5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+        mock_run.assert_not_called()
+
+    def test_image_path_is_directory_raises_error(
+        self, assembler, audio_path, tmp_path, mocker
+    ):
+        """Should raise VideoAssemblyError when an image_path is a directory."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        d = tmp_path / "img_dir"
+        d.mkdir()
+        with pytest.raises(VideoAssemblyError, match="image_path"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=[d],
+                segment_durations=[5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+        mock_run.assert_not_called()
+
+    def test_mixed_valid_and_missing_images_raises_error(
+        self, assembler, audio_path, single_image, tmp_path, mocker
+    ):
+        """Should raise when any image in the list is missing, even if others exist."""
+        mock_run = mocker.patch("video_overview.video.assembler.subprocess.run")
+        missing = tmp_path / "missing.png"
+        images = single_image + [missing]
+        with pytest.raises(VideoAssemblyError, match="image_path"):
+            assembler.assemble(
+                audio_path=audio_path,
+                image_paths=images,
+                segment_durations=[5.0, 5.0],
+                output_path=tmp_path / "out.mp4",
+                format="video",
+            )
+        mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Same-file WAV copy (no-op)
+# ---------------------------------------------------------------------------
+
+
+class TestSameFileWavCopy:
+    def test_wav_same_source_and_dest_is_noop(self, assembler, tmp_path):
+        """Copying WAV to itself should be a no-op, not raise SameFileError."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        original_content = wav.read_bytes()
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=wav,  # same path
+            format="audio",
+        )
+
+        assert result == wav
+        assert wav.read_bytes() == original_content
+
+    def test_wav_same_file_via_resolved_paths(self, assembler, tmp_path):
+        """Same file referenced via different Path objects should be a no-op."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        # Create an equivalent but different Path object
+        other = Path(str(wav))
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=other,
+            format="audio",
+        )
+
+        assert result == other
+
+    def test_wav_same_file_via_symlink(self, assembler, tmp_path):
+        """Same file referenced via a symlink should be a no-op."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        link = tmp_path / "link.wav"
+        try:
+            link.symlink_to(wav)
+        except OSError:
+            pytest.skip("symlink creation not supported on this platform")
+        original_content = wav.read_bytes()
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=link,
+            format="audio",
+        )
+
+        assert result == link
+        assert wav.read_bytes() == original_content
+
+    def test_wav_same_file_via_hardlink(self, assembler, tmp_path):
+        """Same file referenced via a hard link should be a no-op."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        hardlink = tmp_path / "hardlink.wav"
+        hardlink.hardlink_to(wav)
+        original_content = wav.read_bytes()
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=hardlink,
+            format="audio",
+        )
+
+        assert result == hardlink
+        assert wav.read_bytes() == original_content
+
 
 # ---------------------------------------------------------------------------
 # Audio format
