@@ -55,3 +55,7 @@ def __getattr__(name: str):
         return create_overview
 
     raise AttributeError(f"module 'video_overview' has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | _SUBMODULES | {"create_overview"})

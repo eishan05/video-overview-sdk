@@ -149,7 +149,7 @@ class TestImportWithoutGenAI:
         )
 
     def test_audio_generator_import_fails_without_genai(self):
-        """``import video_overview.audio.generator`` should fail without google-genai.
+        """``import video_overview.audio.generator`` fails without genai.
 
         This is expected: the audio generator *requires* google-genai at
         import time.  The point is that importing the top-level package
@@ -159,12 +159,18 @@ class TestImportWithoutGenAI:
         assert result.returncode != 0, (
             "audio.generator should fail to import without google-genai"
         )
+        assert "google.genai" in result.stderr, (
+            f"Failure should be caused by missing google.genai, got: {result.stderr}"
+        )
 
     def test_visuals_generator_import_fails_without_genai(self):
-        """Visuals generator should fail to import without genai."""
+        """Visuals generator fails to import without genai."""
         result = _run_import_check("import video_overview.visuals.generator")
         assert result.returncode != 0, (
             "visuals.generator should fail to import without google-genai"
+        )
+        assert "google.genai" in result.stderr, (
+            f"Failure should be caused by missing google.genai, got: {result.stderr}"
         )
 
 
