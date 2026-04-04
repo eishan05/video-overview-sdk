@@ -95,6 +95,8 @@ class OverviewConfig(BaseModel):
         v = Path(v)
         if not v.parent.exists():
             raise ValueError(f"output parent directory does not exist: {v.parent}")
+        if v.parent.exists() and not v.parent.is_dir():
+            raise ValueError(f"output parent path is not a directory: {v.parent}")
         if v.exists() and v.is_dir():
             raise ValueError(
                 f"output must be a file path, not an existing directory: {v}"

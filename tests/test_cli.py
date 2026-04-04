@@ -301,6 +301,24 @@ class TestInputValidation:
         assert result.exit_code != 0
         assert "does not exist" in result.output.lower()
 
+    def test_output_parent_is_file_fails(self, runner, source_dir, tmp_path):
+        """Reject --output when parent exists but is a file, not a directory."""
+        fake_parent = tmp_path / "not_a_dir"
+        fake_parent.write_text("I am a file")
+        bad_output = str(fake_parent / "output.mp4")
+        result = runner.invoke(
+            main,
+            [
+                str(source_dir),
+                "--topic",
+                "test",
+                "--output",
+                bad_output,
+            ],
+        )
+        assert result.exit_code != 0
+        assert "not a directory" in result.output.lower()
+
 
 class TestMultiplePatterns:
     """Test multiple --include and --exclude patterns."""
