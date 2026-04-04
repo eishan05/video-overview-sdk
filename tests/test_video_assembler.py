@@ -332,7 +332,10 @@ class TestSameFileWavCopy:
         wav = tmp_path / "audio.wav"
         wav.write_bytes(b"RIFF" + b"\x00" * 100)
         link = tmp_path / "link.wav"
-        link.symlink_to(wav)
+        try:
+            link.symlink_to(wav)
+        except OSError:
+            pytest.skip("symlink creation not supported on this platform")
         original_content = wav.read_bytes()
 
         result = assembler.assemble(
