@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -107,7 +108,13 @@ class VideoAssembler:
         Raises:
             VideoAssemblyError: On validation errors or ffmpeg failures.
         """
-        # Validate audio_path exists and is a file
+        if format not in ("audio", "video"):
+            raise VideoAssemblyError(
+                f"Unsupported format: {format!r}. Use 'audio' or 'video'."
+            )
+
+        # Validate audio_path exists and is a file (after format check so
+        # callers with a bad format get the most relevant error first).
         if not audio_path.exists():
             raise VideoAssemblyError(f"audio_path does not exist: {audio_path}")
         if not audio_path.is_file():
@@ -115,13 +122,9 @@ class VideoAssembler:
 
         if format == "audio":
             return self._assemble_audio(audio_path, output_path)
-        elif format == "video":
+        else:
             return self._assemble_video(
                 audio_path, image_paths, segment_durations, output_path
-            )
-        else:
-            raise VideoAssemblyError(
-                f"Unsupported format: {format!r}. Use 'audio' or 'video'."
             )
 
     def _estimate_segment_durations(
@@ -164,8 +167,14 @@ class VideoAssembler:
         """Convert WAV to MP3 or copy if output is WAV."""
         if output_path.suffix.lower() == ".wav":
             # Treat identical source and destination as a no-op to avoid
-            # shutil.SameFileError when the caller passes the same path.
-            if audio_path.resolve() != output_path.resolve():
+            # shutil.SameFileError when the caller passes the same path
+            # (including hard links and symlinks that share the same inode).
+            try:
+                same = os.path.samefile(audio_path, output_path)
+            except OSError:
+                # output_path doesn't exist yet, so it can't be the same file.
+                same = False
+            if not same:
                 shutil.copy2(audio_path, output_path)
             return output_path
 

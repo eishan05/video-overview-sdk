@@ -327,6 +327,44 @@ class TestSameFileWavCopy:
 
         assert result == other
 
+    def test_wav_same_file_via_symlink(self, assembler, tmp_path):
+        """Same file referenced via a symlink should be a no-op."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        link = tmp_path / "link.wav"
+        link.symlink_to(wav)
+        original_content = wav.read_bytes()
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=link,
+            format="audio",
+        )
+
+        assert result == link
+        assert wav.read_bytes() == original_content
+
+    def test_wav_same_file_via_hardlink(self, assembler, tmp_path):
+        """Same file referenced via a hard link should be a no-op."""
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        hardlink = tmp_path / "hardlink.wav"
+        hardlink.hardlink_to(wav)
+        original_content = wav.read_bytes()
+
+        result = assembler.assemble(
+            audio_path=wav,
+            image_paths=[],
+            segment_durations=[],
+            output_path=hardlink,
+            format="audio",
+        )
+
+        assert result == hardlink
+        assert wav.read_bytes() == original_content
+
 
 # ---------------------------------------------------------------------------
 # Audio format
