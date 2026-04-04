@@ -69,6 +69,7 @@ _SKIP_DIRS = frozenset(
         ".venv",
         "venv",
         "env",
+        ".video_overview_cache",
     }
 )
 
