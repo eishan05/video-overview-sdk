@@ -107,6 +107,12 @@ class VideoAssembler:
         Raises:
             VideoAssemblyError: On validation errors or ffmpeg failures.
         """
+        # Validate audio_path exists and is a file
+        if not audio_path.exists():
+            raise VideoAssemblyError(f"audio_path does not exist: {audio_path}")
+        if not audio_path.is_file():
+            raise VideoAssemblyError(f"audio_path is not a file: {audio_path}")
+
         if format == "audio":
             return self._assemble_audio(audio_path, output_path)
         elif format == "video":
@@ -157,7 +163,10 @@ class VideoAssembler:
     def _assemble_audio(self, audio_path: Path, output_path: Path) -> Path:
         """Convert WAV to MP3 or copy if output is WAV."""
         if output_path.suffix.lower() == ".wav":
-            shutil.copy2(audio_path, output_path)
+            # Treat identical source and destination as a no-op to avoid
+            # shutil.SameFileError when the caller passes the same path.
+            if audio_path.resolve() != output_path.resolve():
+                shutil.copy2(audio_path, output_path)
             return output_path
 
         cmd = [
@@ -196,6 +205,17 @@ class VideoAssembler:
                 f"Count mismatch: {len(image_paths)} images but "
                 f"{len(segment_durations)} durations provided."
             )
+
+        # Validate every image_path exists and is a file
+        for i, img in enumerate(image_paths):
+            if not img.exists():
+                raise VideoAssemblyError(
+                    f"image_path at index {i} does not exist: {img}"
+                )
+            if not img.is_file():
+                raise VideoAssemblyError(
+                    f"image_path at index {i} is not a file: {img}"
+                )
 
         # Validate durations
         min_duration = 1.0 / self._fps  # at least one frame
