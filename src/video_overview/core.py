@@ -190,9 +190,11 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
     exclude = list(config.exclude)
     try:
         cache_rel = config.cache_dir.resolve().relative_to(config.source_dir.resolve())
-        # Use a trailing-slash pattern so pathspec gitignore matching
-        # excludes the directory and all descendants recursively.
-        exclude.append(f"{cache_rel.as_posix()}/")
+        # Use a leading-slash (root-anchored) trailing-slash pattern so
+        # pathspec gitignore matching excludes only this specific directory
+        # and all its descendants, without affecting identically-named
+        # directories elsewhere in the tree.
+        exclude.append(f"/{cache_rel.as_posix()}/")
     except ValueError:
         # cache_dir is not inside source_dir — nothing to exclude.
         pass

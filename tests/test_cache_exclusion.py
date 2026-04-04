@@ -123,6 +123,30 @@ class TestCustomCacheDirExclusion:
         assert not any("filelist.txt" in p for p in paths)
         assert not any("segment_0" in p for p in paths)
 
+    def test_exclude_does_not_match_same_basename_elsewhere(self, reader, tmp_path):
+        """Root-anchored exclude must not affect identically-named dirs
+        deeper in the tree."""
+        (tmp_path / "main.py").write_text("x = 1")
+
+        # Cache dir at root
+        cache_root = tmp_path / "my_cache"
+        cache_root.mkdir()
+        (cache_root / "artifact.txt").write_text("cache data")
+
+        # Identically-named dir nested under a different parent
+        nested = tmp_path / "vendor" / "my_cache"
+        nested.mkdir(parents=True)
+        (nested / "legit.txt").write_text("legitimate content")
+
+        result = reader.read(tmp_path, exclude=["/my_cache/"])
+        paths = [f["path"] for f in result["files"]]
+
+        assert "main.py" in paths
+        # Root cache should be excluded
+        assert not any(p == "my_cache/artifact.txt" for p in paths)
+        # Nested same-name dir should NOT be excluded
+        assert "vendor/my_cache/legit.txt" in paths
+
 
 # ---------------------------------------------------------------------------
 # 3. create_overview() auto-excludes cache_dir when inside source_dir
