@@ -175,11 +175,14 @@ class TestFullPipelineVideoMode:
         create_overview(config=config)
 
         reader = all_mocks["content_reader"]
-        reader.read.assert_called_once_with(
-            source_dir=config.source_dir,
-            include=config.include,
-            exclude=config.exclude,
-        )
+        reader.read.assert_called_once()
+        call_kwargs = reader.read.call_args.kwargs
+        assert call_kwargs["source_dir"] == config.source_dir
+        assert call_kwargs["include"] == config.include
+        # The exclude list should contain any user-supplied patterns
+        # plus the auto-added cache dir exclusion pattern.
+        for pat in config.exclude:
+            assert pat in call_kwargs["exclude"]
 
     def test_calls_script_generator(self, tmp_source, all_mocks):
         from video_overview.core import create_overview

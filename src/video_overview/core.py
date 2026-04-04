@@ -183,11 +183,24 @@ def create_overview(config: OverviewConfig | None = None, **kwargs) -> OverviewR
 
     # ---- 2. Read content ----
     _progress("Reading content from source directory...")
+
+    # Auto-exclude cache_dir when it lives inside source_dir to prevent
+    # cache artifacts (filelist.txt, audio segments, images, etc.) from
+    # being ingested into the script generation pipeline.
+    exclude = list(config.exclude)
+    try:
+        cache_rel = config.cache_dir.resolve().relative_to(config.source_dir.resolve())
+        # Build a glob pattern that matches everything under the cache dir.
+        exclude.append(f"{cache_rel.as_posix()}/*")
+    except ValueError:
+        # cache_dir is not inside source_dir — nothing to exclude.
+        pass
+
     reader = ContentReader()
     content_bundle = reader.read(
         source_dir=config.source_dir,
         include=config.include,
-        exclude=config.exclude,
+        exclude=exclude,
     )
 
     # ---- 2b. Fail fast on empty content ----
